@@ -60,7 +60,9 @@ if [ "$1" = "configure" ]; then
     chown -R juvia:juvia /var/lib/juvia
     chown root:juvia /etc/juvia
     chmod 770 /etc/juvia
-    chmod 660 /var/run/juvia/agent.sock
+    if [ -S /var/run/juvia/agent.sock ]; then
+        chmod 660 /var/run/juvia/agent.sock
+    fi
 
     echo "Enabling services..."
     systemctl daemon-reload
