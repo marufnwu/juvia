@@ -37,7 +37,7 @@ func HandleWebsiteCreate(ctx context.Context, params json.RawMessage) (interface
 		return nil, fmt.Errorf("create linux user: %w", err)
 	}
 
-	if err := os.MkdirAll(homeDir, 0750); err != nil {
+	if err := os.MkdirAll(homeDir, 0755); err != nil {
 		return nil, fmt.Errorf("create home dir: %w", err)
 	}
 	if err := os.MkdirAll(publicHTML, 0755); err != nil {
