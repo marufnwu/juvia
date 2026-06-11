@@ -9,31 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  create_release:
-    name: Create Release
+  build-and-release:
+    name: Build and Release
     runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-    steps:
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Juvia ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-
-  build:
-    name: Build Package
-    needs: create_release
-    runs-on: ubuntu-latest
-    outputs:
-      deb_file: ${{ steps.build.outputs.deb_file }}
-    env:
-      VERSION: ${{ github.ref_name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -69,19 +47,15 @@ jobs:
         id: build
         run: |
           chmod +x scripts/build-deb.sh
-          mkdir -p /tmp/juvia-build-$$
-          VERSION_STR="${VERSION#v}"
-          ARCH=amd64 VERSION="${VERSION_STR}" bash scripts/build-deb.sh
+          VERSION_STR="${GITHUB_REF_NAME#v}"
+          bash scripts/build-deb.sh "${VERSION_STR}" amd64
           echo "deb_file=juvia_${VERSION_STR}_amd64.deb" >> $GITHUB_OUTPUT
-        env:
-          VERSION: ${{ github.ref_name }}
 
       - name: Upload DEB package
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: ncipollo/release-action@v1
         with:
-          upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: ${{ needs.build.outputs.deb_file }}
-          asset_name: ${{ needs.build.outputs.deb_file }}
-          asset_content_type: application/vnd.debian.binary-package
+          allowUpdates: true
+          generateReleaseNotes: true
+          artifacts: ${{ steps.build.outputs.deb_file }}
+          artifactContentType: application/vnd.debian.binary-package
+          token: ${{ secrets.GITHUB_TOKEN }}
