@@ -57,11 +57,13 @@ echo "  SSL:            certbot, python3-certbot-nginx"
 echo "  Firewall:       ufw"
 echo "  Utilities:      git, curl, wget, rsync, unzip, sqlite3, htop, tree, net-tools"
 echo ""
-read -p "Continue with installation? [y/N] " -n 1 -r
-echo ""
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+if [ "$AUTO_INSTALL" != "1" ]; then
+  read -p "Continue with installation? [y/N] " -n 1 -r
+  echo ""
+  if [[ ! $REPLY =~ ^[Yy]$ ]]; then
     echo "Aborted."
     exit 1
+  fi
 fi
 
 echo ""
