@@ -34,7 +34,7 @@ func main() {
 	}
 	defer database.Close()
 
-	if err := database.ApplyMigrations("internal/db/migrations"); err != nil {
+	if err := database.ApplyMigrations("/usr/share/juvia/migrations"); err != nil {
 		log.Error("apply migrations", "error", err)
 		os.Exit(1)
 	}

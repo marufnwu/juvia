@@ -21,6 +21,10 @@ echo "Installing systemd services..."
 cp scripts/juvia.service "${BUILD_DIR}/etc/systemd/system/"
 cp scripts/juvia-agent.service "${BUILD_DIR}/etc/systemd/system/"
 
+echo "Installing migrations..."
+mkdir -p "${BUILD_DIR}/usr/share/juvia"
+cp -r internal/db/migrations "${BUILD_DIR}/usr/share/juvia/"
+
 echo "Creating DEB control file..."
 cat > "${BUILD_DIR}/DEBIAN/control" <<EOF
 Package: juvia
