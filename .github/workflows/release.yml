@@ -30,6 +30,10 @@ jobs:
     name: Build Package
     needs: create_release
     runs-on: ubuntu-latest
+    outputs:
+      deb_file: ${{ steps.build.outputs.deb_file }}
+    env:
+      VERSION: ${{ github.ref_name }}
 
     steps:
       - uses: actions/checkout@v4
@@ -38,7 +42,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
-          cache: true
+          cache: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -62,10 +66,13 @@ jobs:
           cp -r web/dist internal/web/dist
 
       - name: Build DEB package
+        id: build
         run: |
           chmod +x scripts/build-deb.sh
           mkdir -p /tmp/juvia-build-$$
-          ARCH=amd64 VERSION=${GITHUB_REF#refs/tags/v} bash scripts/build-deb.sh
+          VERSION_STR="${VERSION#v}"
+          ARCH=amd64 VERSION="${VERSION_STR}" bash scripts/build-deb.sh
+          echo "deb_file=juvia_${VERSION_STR}_amd64.deb" >> $GITHUB_OUTPUT
         env:
           VERSION: ${{ github.ref_name }}
 
@@ -75,6 +82,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.create_release.outputs.upload_url }}
-          asset_path: juvia_${{ github.ref_name }}_amd64.deb
-          asset_name: juvia_${{ github.ref_name }}_amd64.deb
+          asset_path: ${{ needs.build.outputs.deb_file }}
+          asset_name: ${{ needs.build.outputs.deb_file }}
           asset_content_type: application/vnd.debian.binary-package
