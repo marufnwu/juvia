@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -55,7 +56,11 @@ func (db *DB) ApplyMigrations(migrationsDir string) error {
 			return fmt.Errorf("read migration %s: %w", entry.Name(), err)
 		}
 
-		if _, err := db.Exec(string(data)); err != nil {
+		sqlStr := string(data)
+		if _, err := db.Exec(sqlStr); err != nil {
+			if strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
 			return fmt.Errorf("apply migration %s: %w", entry.Name(), err)
 		}
 	}
