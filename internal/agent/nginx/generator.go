@@ -269,7 +269,69 @@ func ValidatePoolConfig(path string) error {
 	return nil
 }
 
+func ensureSitesEnabled() error {
+	sitesEnabled := "/etc/nginx/sites-enabled"
+	sitesAvailable := configDir
+
+	if _, err := os.Stat(sitesEnabled); os.IsNotExist(err) {
+		if err := os.MkdirAll(sitesEnabled, 0755); err != nil {
+			return fmt.Errorf("create sites-enabled dir: %w", err)
+		}
+	}
+
+	entries, err := os.ReadDir(sitesAvailable)
+	if err != nil {
+		return fmt.Errorf("read sites-available: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".conf" {
+			continue
+		}
+		src := filepath.Join(sitesAvailable, entry.Name())
+		dst := filepath.Join(sitesEnabled, entry.Name())
+
+		if _, err := os.Stat(dst); os.IsNotExist(err) {
+			if err := os.Symlink(src, dst); err != nil {
+				return fmt.Errorf("symlink %s: %w", entry.Name(), err)
+			}
+		}
+	}
+
+	return ensurePoolEnabled()
+}
+
+func ensurePoolEnabled() error {
+	poolEnabled := "/etc/php/8.2/fpm/pool.d"
+	poolsAvailable := poolDir
+
+	entries, err := os.ReadDir(poolsAvailable)
+	if err != nil {
+		return fmt.Errorf("read pools-available: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".conf" {
+			continue
+		}
+		src := filepath.Join(poolsAvailable, entry.Name())
+		dst := filepath.Join(poolEnabled, entry.Name())
+
+		if _, err := os.Stat(dst); os.IsNotExist(err) {
+			if err := os.Symlink(src, dst); err != nil {
+				return fmt.Errorf("symlink pool %s: %w", entry.Name(), err)
+			}
+		}
+	}
+
+	return nil
+}
+
 func ReloadNginx() error {
+	if err := ensureSitesEnabled(); err != nil {
+		return fmt.Errorf("ensure sites-enabled: %w", err)
+	}
+
 	cmd := exec.Command("systemctl", "reload", "nginx")
 	if output, err := cmd.CombinedOutput(); err != nil {
 		if strings.Contains(string(output), "No such file or directory") || strings.Contains(string(output), "not-found") {
