@@ -42,8 +42,9 @@ jobs:
 
       - name: Build DEB package
         run: |
+          chmod +x scripts/build-deb.sh
           mkdir -p /tmp/juvia-build-$$
-          ARCH=amd64 VERSION=${GITHUB_REF#refs/tags/v} ./scripts/build-deb.sh
+          ARCH=amd64 VERSION=${GITHUB_REF#refs/tags/v} bash scripts/build-deb.sh
         env:
           VERSION: ${{ github.ref_name }}
 
