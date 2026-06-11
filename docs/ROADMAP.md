@@ -288,13 +288,13 @@ Total: ~18 weeks
 
 ### Deliverables
 
-- [ ] One-click app installs (WordPress, etc.)
-- [ ] Git deployment + webhooks
-- [ ] Webmail (Roundcube)
-- [ ] Terminal session recording
-- [ ] .deb package build
-- [ ] Install script
-- [ ] GPG-signed self-updater
+- [x] One-click app installs (WordPress, etc.)
+- [x] Git deployment + webhooks
+- [x] Webmail (Roundcube)
+- [x] Terminal session recording
+- [x] .deb package build
+- [x] Install script
+- [x] GPG-signed self-updater
 
 ### Tasks
 

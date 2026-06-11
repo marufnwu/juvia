@@ -2,9 +2,16 @@
 
 This file provides critical context for AI agents and developers working on juvia.
 
-**IMPORTANT:** The complete implementation roadmap is in `.kilo/plans/juvia-implementation-roadmap.md`.
+**IMPORTANT:** The complete implementation roadmap is in `.kilo/rules/juvia-implementation-roadmap.md`.
 AI agents MUST follow the phases in order. Do not skip ahead. Each phase's output is the next phase's input.
 See the roadmap for: step-by-step tasks, file paths, constraints, success criteria, and implementation rules.
+
+**CRITICAL RULE: REAL CODE ONLY**
+- This is a production server control panel. Implement actual working code.
+- NO mock data, NO placeholder functions, NO TODO-only implementations.
+- Every function must have real logic. Every API endpoint must work.
+- If a feature cannot be fully implemented, flag it for clarification — do NOT create stubs.
+- Every commit must pass `go build ./...` and `go test ./...` before deployment.
 
 ## Build Commands
 
@@ -21,6 +28,27 @@ go test ./...
 
 # Lint
 golangci-lint run
+
+# Build frontend (requires Node.js)
+cd web && npm install && npm run build && cd ..
+
+# Full build script (Linux/macOS)
+./scripts/build.sh
+
+# Full build script (Windows)
+powershell -File scripts/build.ps1
+
+# Build .deb package (on Linux)
+./scripts/build-deb.sh 0.1.0 amd64
+
+# Install package
+dpkg -i juvia_0.1.0_amd64.deb
+
+# Uninstall package
+./scripts/uninstall.sh
+
+# Update package
+./scripts/update.sh
 ```
 
 ## Two-Process Model Rules

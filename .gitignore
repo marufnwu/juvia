@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+web/node_modules/
+
+# Build output
+web/dist/
+internal/web/dist/
+
+# Go binaries
+juvia
+juvia-agent
+juvia.exe
+juvia-agent.exe
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+*~
+
+# Logs
+*.log
+
+# Database
+*.db
+*.db-wal
+*.db-shm
+
+# Local env
+.env
+.env.local
+
+# Temporary
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Windows backup
+*.~

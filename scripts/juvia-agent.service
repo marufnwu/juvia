@@ -1,0 +1,14 @@
+[Unit]
+Description=Juvia Agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/bin/juvia-agent
+Restart=on-failure
+RestartSec=5
+Environment=JUVIA_SOCKET=/var/run/juvia/agent.sock
+
+[Install]
+WantedBy=multi-user.target
