@@ -6,8 +6,26 @@ on:
       - 'v*'
 
 jobs:
+  create_release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+    steps:
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Juvia ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+
   build:
     name: Build Package
+    needs: create_release
     runs-on: ubuntu-latest
 
     steps:
@@ -53,24 +71,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          upload_url: ${{ needs.create_release.outputs.upload_url }}
           asset_path: juvia_${{ github.ref_name }}_amd64.deb
           asset_name: juvia_${{ github.ref_name }}_amd64.deb
           asset_content_type: application/vnd.debian.binary-package
-
-  create_release:
-    needs: build
-    runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-    steps:
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: ${{ github.ref }}
-          release_name: Juvia ${{ github.ref_name }}
-          draft: false
-          prerelease: false
