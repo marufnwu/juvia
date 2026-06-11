@@ -13,6 +13,7 @@ func getSettingsHandler(cfg RouterConfig) gin.HandlerFunc {
 
 		keys := []string{
 			"panel_port",
+			"panel_bind_address",
 			"panel_hostname",
 			"server_name",
 			"smtp_host",
@@ -62,9 +63,21 @@ func updateSettingsHandler(cfg RouterConfig) gin.HandlerFunc {
 			}
 		}
 
+		restartWarning := ""
+		if _, hasPort := settings["panel_port"]; hasPort {
+			restartWarning = "Panel port changed. Restart the juvia service to apply: sudo systemctl restart juvia"
+		} else if _, hasBind := settings["panel_bind_address"]; hasBind {
+			restartWarning = "Panel bind address changed. Restart the juvia service to apply: sudo systemctl restart juvia"
+		}
+
+		resp := gin.H{"message": "settings updated"}
+		if restartWarning != "" {
+			resp["warning"] = restartWarning
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"data":    gin.H{"message": "settings updated"},
+			"data":    resp,
 		})
 	}
 }

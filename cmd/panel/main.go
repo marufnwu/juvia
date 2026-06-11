@@ -67,17 +67,34 @@ func main() {
 
 	router := api.NewRouter(cfg)
 
-	// WebSocket routes
 	router.GET("/ws/v1/metrics", wsServer.HandleMetrics)
 	router.GET("/ws/v1/tasks/:taskId", wsServer.HandleTasks)
 
+	ctx := context.Background()
+
+	bindAddr := os.Getenv("JUVIA_BIND")
+	if bindAddr == "" {
+		bindAddr, _ = database.GetSetting(ctx, "panel_bind_address")
+		if bindAddr == "" {
+			bindAddr = "0.0.0.0"
+		}
+	}
+
 	port := os.Getenv("JUVIA_PORT")
 	if port == "" {
-		port = "8080"
+		port, _ = database.GetSetting(ctx, "panel_port")
+		if port == "" {
+			hostname, _ := database.GetSetting(ctx, "panel_hostname")
+			if hostname == "" {
+				port = "18473"
+			} else {
+				port = "8080"
+			}
+		}
 	}
 
 	server := &http.Server{
-		Addr:    ":" + port,
+		Addr:    bindAddr + ":" + port,
 		Handler: router,
 	}
 

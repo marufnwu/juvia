@@ -11,7 +11,6 @@ Restart=on-failure
 RestartSec=5
 Environment=JUVIA_DB=/var/lib/juvia/juvia.db
 Environment=JUVIA_LOG=/var/log/juvia/panel.log
-Environment=JUVIA_PORT=8080
 Environment=JUVIA_SOCKET=/var/run/juvia/agent.sock
 Environment=JUVIA_JWT_SECRET=change-me-in-production
 
