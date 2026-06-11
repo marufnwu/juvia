@@ -28,7 +28,9 @@ Version: ${VERSION}
 Section: admin
 Priority: optional
 Architecture: ${ARCH}
-Depends: nginx, apache2, php-fpm, php-cli, php-mysql, php-pgsql, php-curl, php-gd, php-mbstring, php-xml, php-zip, php-intl, php-bcmath, php-soap, mysql-server, postgresql, postfix, dovecot-imapd, dovecot-pop3d, rspamd, bind9, certbot, python3-certbot-nginx, ufw, git, curl, wget, rsync, unzip, sqlite3, htop, tree, net-tools
+Depends: sqlite3, sudo, ufw, curl, wget, rsync, unzip, git, net-tools
+Recommends: nginx | apache2, php-fpm, php-cli, php-mysql, php-pgsql, php-curl, php-gd, php-mbstring, php-xml, php-zip, php-intl, php-bcmath, php-soap, php-opcache, php-apcu, mysql-server | mariadb-server, postgresql, postfix, dovecot-imapd, dovecot-pop3d, rspamd, bind9, certbot, python3-certbot-nginx | python3-certbot-apache, htop, tree
+Suggests: python3-certbot-apache
 Maintainer: Juvia Team <team@juvia.io>
 Description: Server Control Panel
  Juvia is a modern server control panel for managing websites,
