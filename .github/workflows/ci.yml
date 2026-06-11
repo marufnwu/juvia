@@ -30,12 +30,6 @@ jobs:
       - name: Download Go dependencies
         run: go mod download
 
-      - name: Run Go tests
-        run: go test ./...
-
-      - name: Build Go binaries
-        run: go build -o juvia ./cmd/panel && go build -o juvia-agent ./cmd/agent
-
       - name: Install frontend dependencies
         run: npm ci
         working-directory: web
@@ -43,6 +37,17 @@ jobs:
       - name: Build frontend
         run: npm run build
         working-directory: web
+
+      - name: Copy frontend to embed directory
+        run: |
+          mkdir -p internal/web
+          cp -r web/dist internal/web/
+
+      - name: Run Go tests
+        run: go test ./...
+
+      - name: Build Go binaries
+        run: go build -o juvia ./cmd/panel && go build -o juvia-agent ./cmd/agent
 
       - name: Verify build artifacts
         run: |

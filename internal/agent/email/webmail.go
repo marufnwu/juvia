@@ -92,7 +92,9 @@ func HandleWebmailUninstall(ctx context.Context, params json.RawMessage) (interf
 	installPath := "/var/www/webmail"
 
 	if _, err := os.Stat(installPath); os.IsNotExist(err) {
-		return nil, fmt.Errorf("webmail not installed")
+		return map[string]interface{}{
+			"uninstalled": true,
+		}, nil
 	}
 
 	if err := os.RemoveAll(installPath); err != nil {
