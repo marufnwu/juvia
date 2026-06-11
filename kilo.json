@@ -1,0 +1,16 @@
+{
+  "$schema": "https://app.kilo.ai/config.json",
+  "instructions": [
+    "AGENTS.md",
+    ".kilo/rules/juvia-implementation-roadmap.md"
+  ],
+  "default_agent": "code",
+  "model": "anthropic/claude-sonnet",
+  "small_model": "anthropic/claude-haiku",
+  "compaction": {
+    "auto": true,
+    "prune": true
+  },
+  "share": "manual",
+  "autoupdate": "notify"
+}
