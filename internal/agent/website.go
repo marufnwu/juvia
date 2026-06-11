@@ -33,35 +33,37 @@ func HandleWebsiteCreate(ctx context.Context, params json.RawMessage) (interface
 	sslDir := filepath.Join(homeDir, "ssl")
 	tmpDir := filepath.Join(homeDir, "tmp")
 
+	if err := createLinuxUser(linuxUser, homeDir); err != nil {
+		return nil, fmt.Errorf("create linux user: %w", err)
+	}
+
+	if err := os.MkdirAll(homeDir, 0750); err != nil {
+		return nil, fmt.Errorf("create home dir: %w", err)
+	}
 	if err := os.MkdirAll(publicHTML, 0755); err != nil {
 		return nil, fmt.Errorf("create public_html: %w", err)
 	}
 	if err := os.MkdirAll(logsDir, 0755); err != nil {
 		return nil, fmt.Errorf("create logs: %w", err)
 	}
-	if err := os.MkdirAll(sslDir, 0755); err != nil {
+	if err := os.MkdirAll(sslDir, 0750); err != nil {
 		return nil, fmt.Errorf("create ssl: %w", err)
 	}
-	if err := os.MkdirAll(tmpDir, 0755); err != nil {
+	if err := os.MkdirAll(tmpDir, 0770); err != nil {
 		return nil, fmt.Errorf("create tmp: %w", err)
 	}
 
-	if err := createLinuxUser(linuxUser, homeDir); err != nil {
-		return nil, fmt.Errorf("create linux user: %w", err)
+	if err := os.Chown(homeDir, getUID(linuxUser), getGID(linuxUser)); err != nil {
+		return nil, fmt.Errorf("chown home: %w", err)
 	}
-
 	if err := os.Chown(publicHTML, getUID(linuxUser), getGID(linuxUser)); err != nil {
 		return nil, fmt.Errorf("chown public_html: %w", err)
 	}
 	if err := os.Chown(logsDir, getUID(linuxUser), getGID(linuxUser)); err != nil {
 		return nil, fmt.Errorf("chown logs: %w", err)
 	}
-
-	if err := os.Chmod(filepath.Join(homeDir), 0750); err != nil {
-		return nil, fmt.Errorf("chmod home: %w", err)
-	}
-	if err := os.Chmod(publicHTML, 0755); err != nil {
-		return nil, fmt.Errorf("chmod public_html: %w", err)
+	if err := os.Chown(tmpDir, getUID(linuxUser), getGID(linuxUser)); err != nil {
+		return nil, fmt.Errorf("chown tmp: %w", err)
 	}
 
 	if req.WebServer == "" {
