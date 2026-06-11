@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -51,6 +53,13 @@ func (s *Server) Listen() error {
 
 	if err := os.Chmod(s.socketPath, 0660); err != nil {
 		return fmt.Errorf("chmod socket: %w", err)
+	}
+
+	if grp, err := userLookupGroup("juvia"); err == nil {
+		gid, _ := strconv.Atoi(grp.Gid)
+		if gid > 0 {
+			os.Chown(s.socketPath, 0, gid)
+		}
 	}
 
 	s.log.Info("agent socket listening", "path", s.socketPath)
@@ -116,4 +125,24 @@ func (s *Server) writeResponse(conn net.Conn, resp *Response) {
 	data, _ := json.Marshal(resp)
 	data = append(data, '\n')
 	_, _ = conn.Write(data)
+}
+
+type userGroup struct {
+	Name string
+	Gid  string
+}
+
+func userLookupGroup(name string) (*userGroup, error) {
+	data, err := os.ReadFile("/etc/group")
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		parts := strings.SplitN(line, ":", 4)
+		if len(parts) >= 4 && parts[0] == name {
+			return &userGroup{Name: parts[0], Gid: parts[2]}, nil
+		}
+	}
+	return nil, fmt.Errorf("group not found")
 }
