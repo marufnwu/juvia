@@ -26,7 +26,7 @@ func HandleWebsiteCreate(ctx context.Context, params json.RawMessage) (interface
 		return nil, fmt.Errorf("domain is required")
 	}
 
-	linuxUser := sanitizeLinuxUser(req.Domain)
+	linuxUser := SanitizeLinuxUser(req.Domain)
 	homeDir := "/home/" + linuxUser
 	publicHTML := filepath.Join(homeDir, "public_html")
 	logsDir := filepath.Join(homeDir, "logs")
@@ -117,7 +117,7 @@ func HandleWebsiteDelete(ctx context.Context, params json.RawMessage) (interface
 		return nil, fmt.Errorf("domain is required")
 	}
 
-	linuxUser := sanitizeLinuxUser(req.Domain)
+	linuxUser := SanitizeLinuxUser(req.Domain)
 
 	nginx.RemoveSiteConfig(req.Domain)
 	nginx.RemovePoolConfig(req.Domain)
@@ -153,7 +153,7 @@ func HandleWebsiteSuspend(ctx context.Context, params json.RawMessage) (interfac
 	return map[string]interface{}{"suspended": true}, nil
 }
 
-func sanitizeLinuxUser(domain string) string {
+func SanitizeLinuxUser(domain string) string {
 	user := strings.ReplaceAll(domain, ".", "_")
 	user = strings.ReplaceAll(user, "-", "_")
 	if len(user) > 32 {

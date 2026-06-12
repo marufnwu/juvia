@@ -194,6 +194,25 @@ else
 fi
 
 echo ""
+echo "Starting database services..."
+if command -v mysqld >/dev/null 2>&1; then
+    systemctl enable mysql 2>/dev/null || true
+    systemctl start mysql 2>/dev/null || true
+fi
+if command -v mariadbd >/dev/null 2>&1; then
+    systemctl enable mariadb 2>/dev/null || true
+    systemctl start mariadb 2>/dev/null || true
+fi
+if command -v pg_ctl >/dev/null 2>&1; then
+    systemctl enable postgresql 2>/dev/null || true
+    systemctl start postgresql 2>/dev/null || true
+fi
+if command -v named >/dev/null 2>&1; then
+    systemctl enable bind9 2>/dev/null || true
+    systemctl start bind9 2>/dev/null || true
+fi
+
+echo ""
 echo "Installing email services..."
 apt-get install -y postfix dovecot-imapd dovecot-pop3d rspamd
 
@@ -204,6 +223,45 @@ apt-get install -y bind9
 echo ""
 echo "Installing SSL tools..."
 apt-get install -y certbot python3-certbot-nginx python3-certbot-apache
+
+echo ""
+echo "Setting up Juvia runtime directories and permissions..."
+id -u juvia >/dev/null 2>&1 || useradd -r -s /usr/sbin/nologin -d /var/lib/juvia -m juvia 2>/dev/null || true
+
+mkdir -p /etc/juvia/nginx/sites
+mkdir -p /etc/juvia/nginx/pool.d
+mkdir -p /etc/juvia/php-fpm/pools
+mkdir -p /etc/juvia/postfix
+mkdir -p /etc/juvia/dovecot
+mkdir -p /etc/juvia/bind/zones
+mkdir -p /etc/juvia/ufw
+mkdir -p /var/lib/juvia
+mkdir -p /var/log/juvia
+mkdir -p /var/log/juvia/terminal
+mkdir -p /var/run/juvia
+mkdir -p /var/backups/juvia
+
+chown -R www-data:www-data /etc/juvia/nginx/sites /etc/juvia/nginx/pool.d
+chown -R www-data:www-data /etc/juvia/php-fpm/pools
+chmod -R 755 /etc/juvia/nginx /etc/juvia/php-fpm
+chown -R juvia:juvia /var/lib/juvia /var/log/juvia /var/run/juvia
+chmod 755 /var/lib/juvia /var/log/juvia /var/run/juvia
+chmod 770 /var/log/juvia/terminal
+chown -R juvia:juvia /var/backups/juvia
+chmod 755 /var/backups/juvia
+
+if [ -d /etc/nginx/sites-enabled ]; then
+    chown root:www-data /etc/nginx/sites-enabled
+    chmod 755 /etc/nginx/sites-enabled
+fi
+
+if [ -d /etc/php ]; then
+    for fpm_ver in /etc/php/*/fpm; do
+        if [ -d "$fpm_ver/pool.d" ]; then
+            chmod 755 "$fpm_ver/pool.d"
+        fi
+    done
+fi
 
 echo ""
 echo "System dependencies installed successfully."

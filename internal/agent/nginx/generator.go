@@ -279,6 +279,13 @@ func ensureSitesEnabled() error {
 		}
 	}
 
+	if err := os.Chown(sitesEnabled, 0, 33); err != nil { // 33 = www-data
+		// log but don't fail
+	}
+	if err := os.Chmod(sitesEnabled, 0755); err != nil {
+		// log but don't fail
+	}
+
 	entries, err := os.ReadDir(sitesAvailable)
 	if err != nil {
 		return fmt.Errorf("read sites-available: %w", err)
@@ -291,6 +298,16 @@ func ensureSitesEnabled() error {
 		src := filepath.Join(sitesAvailable, entry.Name())
 		dst := filepath.Join(sitesEnabled, entry.Name())
 
+		existing, err := os.Lstat(dst)
+		if err == nil && existing.Mode()&os.ModeSymlink != 0 {
+			target, readErr := os.Readlink(dst)
+			if readErr == nil && target != src {
+				os.Remove(dst)
+			} else if readErr == nil && !fileExists(target) {
+				os.Remove(dst)
+			}
+		}
+
 		if _, err := os.Stat(dst); os.IsNotExist(err) {
 			if err := os.Symlink(src, dst); err != nil {
 				return fmt.Errorf("symlink %s: %w", entry.Name(), err)
@@ -301,9 +318,27 @@ func ensureSitesEnabled() error {
 	return ensurePoolEnabled()
 }
 
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
 func ensurePoolEnabled() error {
 	poolEnabled := "/etc/php/8.2/fpm/pool.d"
 	poolsAvailable := poolDir
+
+	if _, err := os.Stat(poolEnabled); os.IsNotExist(err) {
+		if err := os.MkdirAll(poolEnabled, 0755); err != nil {
+			return fmt.Errorf("create pool-enabled dir: %w", err)
+		}
+	}
+
+	if err := os.Chown(poolEnabled, 0, 33); err != nil {
+		// log but don't fail
+	}
+	if err := os.Chmod(poolEnabled, 0755); err != nil {
+		// log but don't fail
+	}
 
 	entries, err := os.ReadDir(poolsAvailable)
 	if err != nil {
@@ -316,6 +351,16 @@ func ensurePoolEnabled() error {
 		}
 		src := filepath.Join(poolsAvailable, entry.Name())
 		dst := filepath.Join(poolEnabled, entry.Name())
+
+		existing, err := os.Lstat(dst)
+		if err == nil && existing.Mode()&os.ModeSymlink != 0 {
+			target, readErr := os.Readlink(dst)
+			if readErr == nil && target != src {
+				os.Remove(dst)
+			} else if readErr == nil && !fileExists(target) {
+				os.Remove(dst)
+			}
+		}
 
 		if _, err := os.Stat(dst); os.IsNotExist(err) {
 			if err := os.Symlink(src, dst); err != nil {

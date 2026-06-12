@@ -298,8 +298,8 @@ var CreatePayloads = map[string]interface{}{
 		"subdomain": "www",
 	},
 	"/api/v1/websites/:id/files/rename": map[string]interface{}{
-		"old_path": "/old.txt",
-		"new_path": "/new.txt",
+		"old_rel_path": "/old.txt",
+		"new_rel_path": "/new.txt",
 	},
 	"/api/v1/websites/:id/files/extract": map[string]interface{}{
 		"path":         "/archive.tar.gz",

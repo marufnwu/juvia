@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/idna"
+	"juvia/internal/agent"
 	"juvia/internal/tasks"
 )
 
@@ -123,7 +124,8 @@ func createWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
-		documentRoot := "/home/" + req.Domain + "/public_html"
+		linuxUser := agent.SanitizeLinuxUser(req.Domain)
+		documentRoot := "/home/" + linuxUser + "/public_html"
 		website, err := cfg.DB.CreateWebsite(c.Request.Context(), req.Domain, documentRoot, req.PHPVersion, req.WebServer, userID)
 		if err != nil {
 			tasks.NewRunner(cfg.DB.DB, cfg.Log).FailTask(c.Request.Context(), task.TaskID, err.Error())
@@ -131,6 +133,7 @@ func createWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 		_ = cfg.DB.CreateDomain(c.Request.Context(), website.ID, req.Domain, "primary")
+		_, _ = cfg.DB.CreateZone(c.Request.Context(), website.ID, req.Domain)
 
 		resp, err := cfg.AgentClient.Call(c.Request.Context(), "website.create", map[string]interface{}{
 			"domain":      req.Domain,
@@ -168,6 +171,10 @@ func createWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 
 		cfg.DB.UpdateWebsiteStatus(c.Request.Context(), website.ID, "active")
 		tasks.NewRunner(cfg.DB.DB, cfg.Log).CompleteTask(c.Request.Context(), task.TaskID, `{"website_id":`+strconv.FormatInt(website.ID, 10)+`}`)
+
+		cfg.AgentClient.Call(c.Request.Context(), "dns.zone.update", map[string]interface{}{
+			"domain": req.Domain,
+		})
 
 		cfg.DB.LogAudit(c.Request.Context(), &userID, "Created website "+req.Domain, c.ClientIP(), c.Request.UserAgent(), "")
 

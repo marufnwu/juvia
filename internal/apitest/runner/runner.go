@@ -396,15 +396,15 @@ func (c *APIClient) getPayload(path, resolvedPath string) interface{} {
 	}
 
 	if body, ok := CreatePayloads[path]; ok {
-		return c.injectUniqueValues(body)
+		return c.injectUniqueValues(body, path)
 	}
 	if body, ok := CreatePayloads[resolvedPath]; ok {
-		return c.injectUniqueValues(body)
+		return c.injectUniqueValues(body, path)
 	}
 	return nil
 }
 
-func (c *APIClient) injectUniqueValues(body interface{}) interface{} {
+func (c *APIClient) injectUniqueValues(body interface{}, path string) interface{} {
 	if body == nil {
 		return nil
 	}
@@ -432,9 +432,18 @@ func (c *APIClient) injectUniqueValues(body interface{}) interface{} {
 				result[k] = val
 			}
 		}
+		if isBackupCreate(path) {
+			if websiteID := c.Registry.GetWebsite(); websiteID > 0 {
+				result["website_id"] = websiteID
+			}
+		}
 		return result
 	}
 	return body
+}
+
+func isBackupCreate(path string) bool {
+	return path == "/api/v1/backups"
 }
 
 func (c *APIClient) Cleanup() []Result {
