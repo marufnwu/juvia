@@ -43,6 +43,12 @@ func listFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 	}
 }
 
+type uploadFilesRequest struct {
+	Path     string `json:"path"`
+	FileName string `json:"file_name"`
+	Content  string `json:"content"`
+}
+
 func uploadFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -57,15 +63,17 @@ func uploadFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
-		relPath := c.PostForm("path")
-		fileName := c.PostForm("file_name")
-		content := c.PostForm("content")
+		var req uploadFilesRequest
+		if err := c.ShouldBind(&req); err != nil {
+			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "invalid request: "+err.Error()))
+			return
+		}
 
 		resp, err := cfg.AgentClient.Call(c.Request.Context(), "files.upload", map[string]interface{}{
 			"base_path": website.DocumentRoot,
-			"rel_path":  relPath,
-			"file_name": fileName,
-			"content":   content,
+			"rel_path":  req.Path,
+			"file_name": req.FileName,
+			"content":   req.Content,
 		})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to upload file"))
@@ -316,8 +324,8 @@ func saveFileContentHandler(cfg RouterConfig) gin.HandlerFunc {
 
 		resp, err := cfg.AgentClient.Call(c.Request.Context(), "files.upload", map[string]interface{}{
 			"base_path": website.DocumentRoot,
-			"rel_path":  "",
-			"file_name": req.Path,
+			"rel_path":  req.Path,
+			"file_name": "",
 			"content":   req.Content,
 		})
 		if err != nil {
