@@ -239,7 +239,15 @@ func RemoveSiteConfig(domain string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil
 	}
-	return os.Remove(path)
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+
+	symlinkPath := filepath.Join("/etc/nginx/sites-enabled", domain+".conf")
+	if err := os.Remove(symlinkPath); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 func RemovePoolConfig(domain string) error {
@@ -247,7 +255,16 @@ func RemovePoolConfig(domain string) error {
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		return nil
 	}
-	return os.Remove(path)
+	if err := os.Remove(path); err != nil {
+		return err
+	}
+
+	for _, poolEnabled := range []string{"/etc/php/8.1/fpm/pool.d", "/etc/php/8.2/fpm/pool.d", "/etc/php/8.3/fpm/pool.d"} {
+		symlinkPath := filepath.Join(poolEnabled, domain+".conf")
+		if err := os.Remove(symlinkPath); err != nil && !os.IsNotExist(err) {
+		}
+	}
+	return nil
 }
 
 func ValidateConfig(path string) error {
