@@ -155,7 +155,6 @@ func HandleWebsiteSuspend(ctx context.Context, params json.RawMessage) (interfac
 
 func SanitizeLinuxUser(domain string) string {
 	user := strings.ReplaceAll(domain, ".", "_")
-	user = strings.ReplaceAll(user, "-", "_")
 	if len(user) > 32 {
 		user = user[:32]
 	}

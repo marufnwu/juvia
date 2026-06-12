@@ -286,6 +286,10 @@ var CreatePayloads = map[string]interface{}{
 		"role":  "user",
 		"email": "updated@example.com",
 	},
+	"/api/v1/websites/:id": map[string]interface{}{
+		"php_version": "8.1",
+		"web_server":  "nginx",
+	},
 	"/api/v1/websites/:id/php": map[string]interface{}{
 		"php_version": "8.1",
 	},
@@ -298,19 +302,39 @@ var CreatePayloads = map[string]interface{}{
 		"subdomain": "www",
 	},
 	"/api/v1/websites/:id/files/rename": map[string]interface{}{
-		"old_rel_path": "/old.txt",
-		"new_rel_path": "/new.txt",
+		"old_path": "/old.txt",
+		"new_path": "/new.txt",
+	},
+	"/api/v1/websites/:id/files/delete": map[string]interface{}{
+		"path": "/test.txt",
+	},
+	"/api/v1/websites/:id/files/upload": map[string]interface{}{
+		"path":      "/",
+		"file_name": "test.txt",
+		"content":   "hello world",
+	},
+	"/api/v1/websites/:id/files/edit": map[string]interface{}{
+		"path":    "/test.txt",
+		"content": "updated content",
+	},
+	"/api/v1/websites/:id/files/download": map[string]interface{}{
+		"path": "/test.txt",
 	},
 	"/api/v1/websites/:id/files/extract": map[string]interface{}{
 		"path":         "/archive.tar.gz",
 		"destination": "/",
 	},
 	"/api/v1/websites/:id/apps/install": map[string]interface{}{
-		"app": "wordpress",
+		"app_type": "wordpress",
 	},
 	"/api/v1/websites/:id/git": map[string]interface{}{
-		"repository": "https://github.com/example/repo.git",
-		"branch":     "main",
+		"repo_url": "https://github.com/example/repo.git",
+		"branch":  "main",
+	},
+	"/api/v1/dns/records/:id": map[string]interface{}{
+		"name":     "@",
+		"value":    "192.168.0.1",
+		"priority": 0,
 	},
 	"/api/v1/updates/download": map[string]interface{}{
 		"url": "https://example.com/update.tar.gz",

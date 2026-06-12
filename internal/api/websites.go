@@ -132,8 +132,16 @@ func createWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 			return
 		}
+		cfg.DB.LogAudit(c.Request.Context(), &userID, "Created domain "+req.Domain, c.ClientIP(), c.Request.UserAgent(), "")
 		_ = cfg.DB.CreateDomain(c.Request.Context(), website.ID, req.Domain, "primary")
-		_, _ = cfg.DB.CreateZone(c.Request.Context(), website.ID, req.Domain)
+		zone, err := cfg.DB.CreateZone(c.Request.Context(), website.ID, req.Domain)
+		if err != nil {
+			cfg.Log.ErrorContext(c.Request.Context(), "FAILED TO CREATE DNS ZONE: "+req.Domain+": "+err.Error())
+			cfg.DB.LogAudit(c.Request.Context(), &userID, "FAILED TO CREATE DNS ZONE: "+err.Error(), c.ClientIP(), c.Request.UserAgent(), "")
+		} else {
+			cfg.Log.InfoContext(c.Request.Context(), "SUCCESS: created DNS zone "+zone.Domain+" (id="+strconv.FormatInt(zone.ID, 10)+") for website "+req.Domain)
+			cfg.DB.LogAudit(c.Request.Context(), &userID, "Created DNS zone "+zone.Domain+" (id="+strconv.FormatInt(zone.ID, 10)+")", c.ClientIP(), c.Request.UserAgent(), "")
+		}
 
 		resp, err := cfg.AgentClient.Call(c.Request.Context(), "website.create", map[string]interface{}{
 			"domain":      req.Domain,
