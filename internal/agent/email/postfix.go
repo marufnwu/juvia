@@ -221,11 +221,16 @@ func HandleDeliverability(ctx context.Context, params json.RawMessage) (interfac
 }
 
 func generateDovecotPassword(password string) (string, error) {
-	cmd := exec.Command("doveadm", "pw", "-s", "bcrypt")
+	cmd := exec.Command("doveadm", "pw", "-s", "BLF-CRYPT")
 	cmd.Stdin = strings.NewReader(password)
 	output, err := cmd.Output()
 	if err != nil {
-		return "", fmt.Errorf("dovecot pw: %w", err)
+		cmd2 := exec.Command("doveadm", "pw", "-s", "SHA512")
+		cmd2.Stdin = strings.NewReader(password)
+		output, err = cmd2.Output()
+		if err != nil {
+			return "", fmt.Errorf("dovecot pw: %w", err)
+		}
 	}
 	return strings.TrimSpace(string(output)), nil
 }

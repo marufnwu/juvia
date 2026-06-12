@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-INSTALL_SCRIPT_VERSION="1.2.0"
+INSTALL_SCRIPT_VERSION="1.3.0"
 
 echo "Juvia Installer v${INSTALL_SCRIPT_VERSION}"
 echo "========================================"
@@ -92,6 +92,24 @@ verify_install() {
         echo "  WARNING: panel not responding on port ${port} (may still be starting)"
     fi
 
+    if command -v certbot >/dev/null 2>&1; then
+        echo "  OK: certbot installed"
+    else
+        echo "  WARNING: certbot not found in PATH"
+    fi
+
+    if command -v dovecot >/dev/null 2>&1; then
+        echo "  OK: dovecot installed"
+    else
+        echo "  WARNING: dovecot not found"
+    fi
+
+    if systemctl is-active --quiet nginx 2>/dev/null; then
+        echo "  OK: nginx running"
+    else
+        echo "  WARNING: nginx not running"
+    fi
+
     if [ $errors -gt 0 ]; then
         echo ""
         echo "Installation completed with $errors error(s). Check logs above."
@@ -101,6 +119,50 @@ verify_install() {
     echo ""
     echo "Installation verified successfully!"
     return 0
+}
+
+repair_services() {
+    echo ""
+    echo "Repairing services..."
+
+    echo "  Checking nginx..."
+    if command -v nginx >/dev/null 2>&1; then
+        nginx -t 2>/dev/null && echo "    OK: nginx config valid" || echo "    ERROR: nginx config invalid"
+    fi
+
+    echo "  Checking certbot..."
+    if ! command -v certbot >/dev/null 2>&1 && command -v python3 >/dev/null 2>&1; then
+        python3 -m pip install certbot --quiet 2>/dev/null || true
+        if [ -f /usr/local/bin/certbot ]; then
+            ln -sf /usr/local/bin/certbot /usr/bin/certbot 2>/dev/null || true
+        fi
+    fi
+
+    echo "  Checking dovecot..."
+    if command -v dovecot >/dev/null 2>&1; then
+        if ! systemctl is-active --quiet dovecot 2>/dev/null; then
+            systemctl start dovecot 2>/dev/null || true
+        fi
+        if ! command -v doveadm >/dev/null 2>&1; then
+            apt-get install -y dovecot-core 2>/dev/null || true
+        fi
+    fi
+
+    echo "  Fixing nginx dead symlinks..."
+    if [ -d /etc/nginx/sites-enabled ]; then
+        for link in /etc/nginx/sites-enabled/*.conf; do
+            if [ -L "$link" ] && [ ! -e "$link" ]; then
+                echo "    Removing dead symlink: $link"
+                rm -f "$link"
+            fi
+        done
+    fi
+
+    echo "  Restarting services..."
+    systemctl restart nginx 2>/dev/null || true
+    systemctl restart dovecot 2>/dev/null || true
+
+    echo "  Repair complete."
 }
 
 ARCH=$(detect_arch)
@@ -116,6 +178,11 @@ echo "Detected: $OS ($ARCH)"
 if [ "$(id -u)" -ne 0 ]; then
     echo "Error: This script must be run as root."
     exit 1
+fi
+
+REPAIR_MODE=0
+if [ "$1" = "--repair" ]; then
+    REPAIR_MODE=1
 fi
 
 wait_for_apt_lock
@@ -213,6 +280,40 @@ if command -v named >/dev/null 2>&1; then
 fi
 
 echo ""
+echo "Starting web server..."
+if command -v nginx >/dev/null 2>&1; then
+    systemctl enable nginx 2>/dev/null || true
+    systemctl start nginx 2>/dev/null || true
+fi
+if command -v apache2 >/dev/null 2>&1; then
+    systemctl enable apache2 2>/dev/null || true
+    systemctl start apache2 2>/dev/null || true
+fi
+
+echo ""
+echo "Starting email services..."
+if command -v dovecot >/dev/null 2>&1; then
+    systemctl enable dovecot 2>/dev/null || true
+    systemctl start dovecot 2>/dev/null || true
+fi
+if command -v postfix >/dev/null 2>&1; then
+    systemctl enable postfix 2>/dev/null || true
+    systemctl start postfix 2>/dev/null || true
+fi
+
+echo ""
+echo "Setting up certbot..."
+if command -v certbot >/dev/null 2>&1; then
+    if [ -d /etc/nginx/sites-available ]; then
+        mkdir -p /etc/juvia/ssl
+        touch /etc/juvia/ssl/renovate.json
+    fi
+elif command -v python3 >/dev/null 2>&1; then
+    python3 -m pip install certbot --quiet 2>/dev/null || true
+    ln -sf /usr/local/bin/certbot /usr/bin/certbot 2>/dev/null || true
+fi
+
+echo ""
 echo "Installing email services..."
 apt-get install -y postfix dovecot-imapd dovecot-pop3d rspamd
 
@@ -294,7 +395,8 @@ PANEL_PORT=$(sqlite3 /var/lib/juvia/juvia.db "SELECT value FROM settings WHERE k
 echo ""
 echo "Configuring firewall..."
 ufw --force enable 2>/dev/null || true
-ufw allow "$PANEL_PORT/tcp" 2>/dev/null || true
+ufw allow "$PANEL_PORT/tcp" comment 'juvia-panel' 2>/dev/null || true
+ufw allow 22/tcp comment 'ssh' 2>/dev/null || true
 ufw reload 2>/dev/null || true
 
 echo ""
@@ -313,5 +415,9 @@ echo ""
 echo "========================================"
 
 verify_install
+
+if [ "$REPAIR_MODE" = "1" ]; then
+    repair_services
+fi
 
 rm -rf "$TEMP_DIR"
