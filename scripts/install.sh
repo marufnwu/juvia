@@ -304,13 +304,17 @@ fi
 echo ""
 echo "Setting up certbot..."
 if command -v certbot >/dev/null 2>&1; then
-    if [ -d /etc/nginx/sites-available ]; then
-        mkdir -p /etc/juvia/ssl
-        touch /etc/juvia/ssl/renovate.json
-    fi
+    echo "  certbot already installed"
+elif command -v snap >/dev/null 2>&1; then
+    snap install certbot --classic 2>/dev/null || true
+    ln -sf /snap/bin/certbot /usr/bin/certbot 2>/dev/null || true
 elif command -v python3 >/dev/null 2>&1; then
     python3 -m pip install certbot --quiet 2>/dev/null || true
     ln -sf /usr/local/bin/certbot /usr/bin/certbot 2>/dev/null || true
+fi
+if command -v certbot >/dev/null 2>&1; then
+    mkdir -p /etc/juvia/ssl
+    touch /etc/juvia/ssl/renovate.json
 fi
 
 echo ""
@@ -320,10 +324,6 @@ apt-get install -y postfix dovecot-imapd dovecot-pop3d rspamd
 echo ""
 echo "Installing DNS server..."
 apt-get install -y bind9
-
-echo ""
-echo "Installing SSL tools..."
-apt-get install -y certbot python3-certbot-nginx python3-certbot-apache
 
 echo ""
 echo "Setting up Juvia runtime directories and permissions..."
