@@ -110,9 +110,9 @@ var Endpoints = []Endpoint{
 	{Method: http.MethodDelete, Path: "/api/v1/email/aliases/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "alias", AgentDependent: true, Description: "Delete alias"},
 	{Method: http.MethodGet, Path: "/api/v1/email/forwarders", Auth: AuthUser, Phase: PhaseAnytime, Description: "List forwarders"},
 	{Method: http.MethodDelete, Path: "/api/v1/email/forwarders/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "forwarder", AgentDependent: true, Description: "Delete forwarder"},
-	{Method: http.MethodGet, Path: "/api/v1/email/catch-all", Auth: AuthUser, Phase: PhaseAnytime, QueryParams: map[string]string{"domain": ""}, Description: "Get catch-all"},
-	{Method: http.MethodPut, Path: "/api/v1/email/catch-all", Auth: AuthUser, Phase: PhaseAnytime, Description: "Set catch-all"},
-	{Method: http.MethodGet, Path: "/api/v1/email/deliverability", Auth: AuthUser, Phase: PhaseAnytime, QueryParams: map[string]string{"domain": ""}, Description: "Check deliverability"},
+	{Method: http.MethodGet, Path: "/api/v1/email/catch-all", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "website", QueryParams: map[string]string{"domain": ""}, Description: "Get catch-all"},
+	{Method: http.MethodPut, Path: "/api/v1/email/catch-all", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "website", Description: "Set catch-all"},
+	{Method: http.MethodGet, Path: "/api/v1/email/deliverability", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "website", QueryParams: map[string]string{"domain": ""}, Description: "Check deliverability"},
 
 	{Method: http.MethodGet, Path: "/api/v1/firewall/rules", Auth: AuthUser, Phase: PhaseAnytime, Description: "List firewall rules"},
 	{Method: http.MethodGet, Path: "/api/v1/firewall/rules/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "firewall", Description: "Get firewall rule"},
