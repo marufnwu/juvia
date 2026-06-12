@@ -1,97 +1,94 @@
-import { useEffect, useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { FolderOpen } from 'lucide-react'
+import { Globe, FolderOpen, Search } from 'lucide-react'
+import { Card } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { SearchInput } from '../../components/ui/SearchInput'
+import { PageHeader } from '../../components/ui/Misc'
 import api from '../../lib/api'
+import { formatDate } from '../../lib/utils'
+import { cn } from '../../lib/utils'
 
 interface Website {
   id: number
   domain: string
-  document_root: string
-  status: string
 }
 
 export default function FilesIndex() {
+  const navigate = useNavigate()
   const [websites, setWebsites] = useState<Website[]>([])
   const [loading, setLoading] = useState(true)
-  const navigate = useNavigate()
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
-    fetchWebsites()
+    loadWebsites()
   }, [])
 
-  const fetchWebsites = async () => {
+  const loadWebsites = async () => {
     try {
       const res = await api.get('/websites')
-      const data = res.data
-      if (data.success) {
-        setWebsites(data.data)
-      }
+      setWebsites(res.data.data || [])
     } catch (err) {
-      console.error('Failed to fetch websites:', err)
+      console.error(err)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleSelectWebsite = (website: Website) => {
-    navigate(`/files/${website.id}`)
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-muted-foreground">Loading websites...</div>
-      </div>
-    )
-  }
+  const filteredWebsites = websites.filter((w) =>
+    w.domain.toLowerCase().includes(search.toLowerCase())
+  )
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">File Manager</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Browse and manage files for your websites
-        </p>
+      <PageHeader
+        title="File Manager"
+        description="Select a website to manage its files"
+        breadcrumbs={[{ label: 'Files' }]}
+      />
+
+      <div className="w-64">
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search websites..."
+        />
       </div>
 
-      {websites.length === 0 ? (
-        <div className="text-center py-12 border rounded-lg">
-          <FolderOpen className="mx-auto h-12 w-12 text-muted-foreground/50" />
-          <h3 className="mt-4 text-lg font-medium">No websites found</h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Create a website first to start managing files
-          </p>
-        </div>
-      ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {websites.map((website) => (
-            <button
-              key={website.id}
-              onClick={() => handleSelectWebsite(website)}
-              className="border rounded-lg p-4 text-left hover:bg-accent/50 transition-colors group"
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {loading ? (
+          [...Array(6)].map((_, i) => (
+            <Card key={i} className="p-4">
+              <div className="h-12 skeleton rounded mb-2" />
+              <div className="h-4 w-24 skeleton rounded" />
+            </Card>
+          ))
+        ) : filteredWebsites.length === 0 ? (
+          <div className="col-span-full text-center py-12 text-text-secondary">
+            No websites found
+          </div>
+        ) : (
+          filteredWebsites.map((site) => (
+            <Card
+              key={site.id}
+              hover
+              className="cursor-pointer"
+              onClick={() => navigate(`/files/${site.id}`)}
             >
-              <div className="flex items-start gap-3">
-                <FolderOpen className="h-8 w-8 text-primary mt-1" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium truncate">{website.domain}</p>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {website.document_root}
-                  </p>
-                  <div className="mt-2">
-                    <span className={`text-xs px-2 py-0.5 rounded ${
-                      website.status === 'active'
-                        ? 'bg-green-500/10 text-green-500'
-                        : 'bg-yellow-500/10 text-yellow-500'
-                    }`}>
-                      {website.status}
-                    </span>
-                  </div>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded bg-accent/50 flex items-center justify-center">
+                  <Globe className="w-5 h-5 text-text-secondary" />
                 </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium truncate">{site.domain}</p>
+                  <p className="text-xs text-text-secondary">Click to manage files</p>
+                </div>
+                <FolderOpen className="w-5 h-5 text-text-secondary" />
               </div>
-            </button>
-          ))}
-        </div>
-      )}
+            </Card>
+          ))
+        )}
+      </div>
     </div>
   )
 }

@@ -1,32 +1,38 @@
 import { useEffect, useState } from 'react'
-import { Bell, CheckCircle, AlertTriangle, XCircle } from 'lucide-react'
+import { AlertTriangle, Bell, CheckCircle, Trash2, Settings, RefreshCw } from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardDescription } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { Badge } from '../../components/ui/Badge'
+import { Table } from '../../components/ui/Table'
+import { PageHeader } from '../../components/ui/Misc'
+import { Modal } from '../../components/ui/Modal'
+import { Input, Label, Select, FormGroup, Switch } from '../../components/ui/Input'
 import api from '../../lib/api'
+import { formatDate, timeAgo } from '../../lib/utils'
+import { cn } from '../../lib/utils'
 
 interface Alert {
   id: number
   type: string
-  severity: string
   message: string
-  resource_id: number
-  resource_type: string
-  acknowledged: boolean
+  severity: 'critical' | 'warning' | 'info'
+  source: string
+  status: 'active' | 'acknowledged'
   created_at: string
 }
 
 export default function Alerts() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
-  const [filter, setFilter] = useState<'all' | 'unacknowledged'>('all')
+  const [showSettingsModal, setShowSettingsModal] = useState(false)
 
   useEffect(() => {
     loadAlerts()
-  }, [filter])
+  }, [])
 
   const loadAlerts = async () => {
-    setLoading(true)
     try {
-      const params = filter === 'unacknowledged' ? '?acknowledged=false' : ''
-      const res = await api.get(`/alerts${params}`)
+      const res = await api.get('/alerts')
       setAlerts(res.data.data || [])
     } catch (err) {
       console.error(err)
@@ -35,148 +41,191 @@ export default function Alerts() {
     }
   }
 
-  const acknowledgeAlert = async (id: number) => {
+  const handleAcknowledge = async (id: number) => {
     try {
       await api.post(`/alerts/${id}/acknowledge`)
-      loadAlerts()
+      setAlerts(alerts.map((a) => a.id === id ? { ...a, status: 'acknowledged' } : a))
     } catch (err) {
       console.error(err)
     }
   }
 
-  const deleteAlert = async (id: number) => {
+  const handleDelete = async (id: number) => {
     try {
       await api.delete(`/alerts/${id}`)
-      loadAlerts()
+      setAlerts(alerts.filter((a) => a.id !== id))
     } catch (err) {
       console.error(err)
     }
   }
 
-  const getSeverityIcon = (severity: string) => {
-    switch (severity) {
-      case 'critical':
-        return <XCircle size={16} className="text-red-600" />
-      case 'warning':
-        return <AlertTriangle size={16} className="text-yellow-600" />
-      default:
-        return <Bell size={16} className="text-blue-600" />
-    }
-  }
-
-  const getSeverityClass = (severity: string): string => {
-    switch (severity) {
-      case 'critical':
-        return 'border-l-red-500 bg-red-50'
-      case 'warning':
-        return 'border-l-yellow-500 bg-yellow-50'
-      default:
-        return 'border-l-blue-500 bg-blue-50'
-    }
-  }
-
-  const getAlertTypeLabel = (type: string): string => {
-    const labels: Record<string, string> = {
-      'disk_usage': 'Disk Usage',
-      'website_down': 'Website Down',
-      'ssl_expiry': 'SSL Expiring',
-      'backup_overdue': 'Backup Overdue',
-      'service_down': 'Service Down',
-    }
-    const prefix = type.split(':')[0]
-    return labels[prefix] || type
-  }
-
-  const formatDescription = (alert: Alert): string => {
-    switch (alert.type) {
-      case 'disk_usage':
-        return 'Disk Usage · Your server is running low on disk space'
-      case 'website_down':
-        return 'Website Down · Your website is not responding'
-      case 'ssl_expiry':
-        return 'SSL Expiring · Your SSL certificate is about to expire'
-      case 'backup_overdue':
-        return 'Backup Overdue · No backup has been made recently'
-      case 'service_down':
-        return 'Service Down · A system service is not running'
-      default:
-        return alert.message
-    }
-  }
-
-  return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
+  const columns = [
+    {
+      key: 'severity',
+      header: 'Severity',
+      width: '100px',
+      render: (alert: Alert) => (
+        <span className={cn('w-2 h-2 rounded-full',
+          alert.severity === 'critical' ? 'bg-danger' :
+          alert.severity === 'warning' ? 'bg-warning' : 'bg-primary')} />
+      ),
+    },
+    {
+      key: 'message',
+      header: 'Alert',
+      render: (alert: Alert) => (
         <div>
-          <h1 className="text-lg font-semibold">Alerts</h1>
-          <p className="text-sm text-muted-foreground">
-            Alert · A notification about something that needs your attention
+          <p className="font-medium text-sm">{alert.message}</p>
+          <p className="text-xs text-text-secondary mt-0.5">
+            {alert.type} · {alert.source}
           </p>
         </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (alert: Alert) => (
+        <Badge variant={alert.status === 'active' ? 'danger' : 'neutral'}>
+          {alert.status}
+        </Badge>
+      ),
+    },
+    {
+      key: 'created',
+      header: 'Time',
+      render: (alert: Alert) => (
+        <span className="text-xs text-text-secondary">{timeAgo(alert.created_at)}</span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '160px',
+      render: (alert: Alert) => (
         <div className="flex items-center gap-2">
-          <select
-            value={filter}
-            onChange={(e) => setFilter(e.target.value as 'all' | 'unacknowledged')}
-            className="border border-border px-3 py-2 text-sm"
+          {alert.status === 'active' && (
+            <button
+              onClick={() => handleAcknowledge(alert.id)}
+              className="px-3 py-1.5 text-xs font-medium border border-border rounded hover:bg-accent transition-colors"
+            >
+              <CheckCircle className="w-3.5 h-3.5 inline mr-1" />
+              Acknowledge
+            </button>
+          )}
+          <button
+            onClick={() => handleDelete(alert.id)}
+            className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded transition-colors"
           >
-            <option value="all">All Alerts</option>
-            <option value="unacknowledged">Unacknowledged</option>
-          </select>
-          <button onClick={loadAlerts} className="border border-border px-3 py-2 text-sm hover:bg-muted">
-            Refresh
+            <Trash2 className="w-3.5 h-3.5" />
           </button>
         </div>
-      </div>
+      ),
+    },
+  ]
 
-      {loading ? (
-        <div className="text-muted-foreground">Loading alerts...</div>
-      ) : alerts.length === 0 ? (
-        <div className="text-center py-12 border border-border">
-          <CheckCircle size={48} className="mx-auto text-green-500 mb-4" />
-          <p className="text-muted-foreground">No alerts</p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {alerts.map((alert) => (
-            <div
-              key={alert.id}
-              className={`border border-l-4 ${getSeverityClass(alert.severity)} p-4 ${alert.acknowledged ? 'opacity-60' : ''}`}
-            >
-              <div className="flex items-start gap-3">
-                {getSeverityIcon(alert.severity)}
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-sm">{getAlertTypeLabel(alert.type)}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded ${alert.severity === 'critical' ? 'bg-red-200 text-red-800' : 'bg-yellow-200 text-yellow-800'}`}>
-                      {alert.severity}
-                    </span>
-                    {alert.acknowledged && (
-                      <span className="text-xs text-muted-foreground">Acknowledged</span>
-                    )}
-                  </div>
-                  <p className="text-sm">{formatDescription(alert)}</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {new Date(alert.created_at).toLocaleString()}
-                  </p>
-                </div>
-                <div className="flex gap-2">
-                  {!alert.acknowledged && (
-                    <button
-                      onClick={() => acknowledgeAlert(alert.id)}
-                      className="text-primary hover:underline text-xs"
-                    >
-                      Acknowledge
-                    </button>
-                  )}
-                  <button onClick={() => deleteAlert(alert.id)} className="text-red-600 hover:underline text-xs">
-                    Delete
-                  </button>
-                </div>
-              </div>
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Alerts"
+        description="Server monitoring alerts and notifications"
+        breadcrumbs={[{ label: 'Alerts' }]}
+        actions={
+          <Button variant="outline" onClick={() => setShowSettingsModal(true)}>
+            <Settings className="w-4 h-4 mr-2" />
+            Alert Settings
+          </Button>
+        }
+      />
+
+      <Card padding="none">
+        <div className="p-4 flex items-center justify-between border-b border-border">
+          <div className="flex items-center gap-3">
+            <div className={cn('p-2 rounded',
+              alerts.filter(a => a.status === 'active').length > 0 ? 'bg-danger/10' : 'bg-success/10')}>
+              <Bell className={cn('w-5 h-5',
+                alerts.filter(a => a.status === 'active').length > 0 ? 'text-danger' : 'text-success')} />
             </div>
-          ))}
+            <div>
+              <p className="font-medium">
+                {alerts.filter(a => a.status === 'active').length} active alerts
+              </p>
+              <p className="text-xs text-text-secondary">Real-time monitoring</p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={loadAlerts}>
+            <RefreshCw className="w-3.5 h-3.5 mr-1" />
+            Refresh
+          </Button>
         </div>
-      )}
+        <Table
+          columns={columns}
+          data={alerts}
+          keyField="id"
+          loading={loading}
+          emptyMessage="No alerts — everything looks good!"
+        />
+      </Card>
+
+      <Modal
+        open={showSettingsModal}
+        onClose={() => setShowSettingsModal(false)}
+        title="Alert Settings"
+        size="md"
+      >
+        <div className="space-y-6">
+          <FormGroup>
+            <Label>CPU Alert Threshold</Label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="50"
+                max="100"
+                defaultValue="90"
+                className="flex-1"
+              />
+              <span className="text-sm font-mono w-12">90%</span>
+            </div>
+          </FormGroup>
+          <FormGroup>
+            <Label>Memory Alert Threshold</Label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="50"
+                max="100"
+                defaultValue="85"
+                className="flex-1"
+              />
+              <span className="text-sm font-mono w-12">85%</span>
+            </div>
+          </FormGroup>
+          <FormGroup>
+            <Label>Disk Alert Threshold</Label>
+            <div className="flex items-center gap-3">
+              <input
+                type="range"
+                min="50"
+                max="100"
+                defaultValue="80"
+                className="flex-1"
+              />
+              <span className="text-sm font-mono w-12">80%</span>
+            </div>
+          </FormGroup>
+          <FormGroup>
+            <Label>Website Response Timeout</Label>
+            <div className="flex items-center gap-2">
+              <Input type="number" defaultValue="3" className="w-20" />
+              <span className="text-sm text-text-secondary">seconds</span>
+            </div>
+          </FormGroup>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="outline" onClick={() => setShowSettingsModal(false)}>Cancel</Button>
+            <Button onClick={() => setShowSettingsModal(false)}>Save Settings</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

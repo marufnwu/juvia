@@ -1,33 +1,133 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 0 0% 7%;
-    --card: 0 0% 98%;
-    --card-foreground: 0 0% 7%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 0 0% 7%;
-    --primary: 0 0% 7%;
-    --primary-foreground: 0 0% 100%;
-    --secondary: 0 0% 96%;
-    --secondary-foreground: 0 0% 7%;
-    --muted: 0 0% 96%;
-    --muted-foreground: 0 0% 53%;
-    --accent: 0 0% 96%;
-    --accent-foreground: 0 0% 7%;
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
+    --popover: 217 33% 17%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217 33% 17%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 217 33% 17%;
+    --accent-foreground: 210 40% 98%;
     --destructive: 0 84% 60%;
-    --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 90%;
-    --input: 0 0% 90%;
-    --ring: 0 0% 7%;
-    --radius: 0px;
+    --destructive-foreground: 210 40% 98%;
+    --border: 215 28% 29%;
+    --input: 215 28% 29%;
+    --ring: 221 83% 53%;
+    --radius: 6px;
+  }
+
+  * {
+    border-color: hsl(var(--border));
   }
 
   body {
-    @apply bg-background text-foreground;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    @apply bg-background text-foreground font-sans antialiased;
+    background-color: #0F172A;
+    color: #F8FAFC;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #1E293B;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #475569;
+  }
+
+  /* Selection */
+  ::selection {
+    background-color: rgba(37, 99, 235, 0.3);
+  }
+}
+
+@layer utilities {
+  /* Status pulse animation */
+  .status-live {
+    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  }
+
+  /* Skeleton shimmer */
+  .skeleton {
+    @apply bg-gradient-to-r from-surface via-border to-surface bg-[length:200%_100%] animate-shimmer;
+  }
+
+  /* Glow focus states */
+  .focus-glow-primary:focus {
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.4);
+  }
+
+  .focus-glow-danger:focus {
+    box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.4);
+  }
+
+  /* Compact table row */
+  .table-row-compact {
+    @apply py-2 text-sm;
+  }
+
+  /* Monospace for technical content */
+  .font-technical {
+    @apply font-mono text-sm;
+  }
+
+  /* Status dot */
+  .status-dot {
+    @apply w-2 h-2 rounded-full;
+  }
+  .status-dot-success { @apply bg-success; }
+  .status-dot-warning { @apply bg-warning; }
+  .status-dot-danger { @apply bg-danger; }
+  .status-dot-neutral { @apply bg-neutral; }
+  .status-dot-pending { @apply bg-primary; }
+
+  /* Card hover */
+  .card-hover {
+    @apply transition-colors duration-150 hover:bg-accent/50;
+  }
+
+  /* Toast slide-up */
+  .toast-enter {
+    animation: slideUp 150ms ease-out;
+  }
+
+  @keyframes slideUp {
+    from {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+
+  /* Modal fade-in */
+  .modal-enter {
+    animation: fadeIn 200ms ease-in-out;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
   }
 }

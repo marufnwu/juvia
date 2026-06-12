@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react'
+import { Activity, Cpu, HardDrive, MemoryStick, Network, Clock, RefreshCw } from 'lucide-react'
+import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/ui/Misc'
+import { ProgressBar } from '../../components/ui/Misc'
 import { WSClient } from '../../lib/ws'
-import api from '../../lib/api'
+import { formatBytes, formatPercentage } from '../../lib/utils'
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { cn } from '../../lib/utils'
 
 interface MetricsSnapshot {
   cpu: number
@@ -9,237 +16,220 @@ interface MetricsSnapshot {
   disk_used: number
   disk_total: number
   load_avg: number[]
-  network_rx: number
-  network_tx: number
   processes: number
   uptime: number
+  network_in: number
+  network_out: number
 }
 
-interface Process {
-  pid: number
-  name: string
-  cpu: number
-  ram: number
-  status: string
-  command: string
-}
-
-function formatBytes(bytes: number) {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
-}
-
-function formatUptime(seconds: number) {
-  const days = Math.floor(seconds / 86400)
-  const hours = Math.floor((seconds % 86400) / 3600)
-  const mins = Math.floor((seconds % 3600) / 60)
-  if (days > 0) return `${days}d ${hours}h`
-  if (hours > 0) return `${hours}h ${mins}m`
-  return `${mins}m`
+interface DataPoint {
+  time: string
+  value: number
 }
 
 export default function Metrics() {
   const [metrics, setMetrics] = useState<MetricsSnapshot | null>(null)
-  const [processes, setProcesses] = useState<Process[]>([])
-  const [history, setHistory] = useState<{ cpu: number; ram: number; time: string }[]>([])
+  const [cpuHistory, setCpuHistory] = useState<DataPoint[]>([])
+  const [ramHistory, setRamHistory] = useState<DataPoint[]>([])
+  const [timeRange, setTimeRange] = useState<'1h' | '6h' | '24h' | '7d'>('1h')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchCurrentMetrics()
-
     const ws = new WSClient(`ws://${window.location.host}/ws/v1/metrics`)
     ws.on('metrics', (data) => {
       const m = data as MetricsSnapshot
       setMetrics(m)
       setLoading(false)
-      setHistory((prev) => {
-        const newPoint = {
-          cpu: m.cpu,
-          ram: m.ram_total > 0 ? (m.ram_used / m.ram_total) * 100 : 0,
-          time: new Date().toLocaleTimeString(),
-        }
-        const updated = [...prev, newPoint].slice(-30)
-        return updated
-      })
+
+      const time = new Date().toLocaleTimeString()
+      setCpuHistory((prev) => [...prev.slice(-59), { time, value: m.cpu }])
+      setRamHistory((prev) => [...prev.slice(-59), {
+        time,
+        value: Math.round((m.ram_used / m.ram_total) * 100),
+      }])
     })
     ws.connect()
-
     return () => ws.close()
   }, [])
 
-  const fetchCurrentMetrics = async () => {
-    try {
-      const res = await api.get('/metrics/current')
-      const data = res.data
-      if (data.success) {
-        setMetrics(data.data)
-        if (data.data.processes) {
-          setProcesses(data.data.processes.slice(0, 20))
-        }
-      }
-    } catch (err) {
-      console.error('Failed to fetch metrics:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const cpuPercent = metrics?.cpu ?? 0
+  const ramUsed = metrics?.ram_used ?? 0
+  const ramTotal = metrics?.ram_total ?? 1
+  const diskUsed = metrics?.disk_used ?? 0
+  const diskTotal = metrics?.disk_total ?? 1
 
-  const cpuPercent = metrics ? metrics.cpu.toFixed(1) : '0'
-  const ramPercent = metrics && metrics.ram_total > 0
-    ? ((metrics.ram_used / metrics.ram_total) * 100).toFixed(1)
-    : '0'
-  const diskPercent = metrics && metrics.disk_total > 0
-    ? ((metrics.disk_used / metrics.disk_total) * 100).toFixed(1)
-    : '0'
+  const getVariant = (percent: number) => {
+    if (percent >= 90) return 'danger'
+    if (percent >= 70) return 'warning'
+    return 'primary'
+  }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Metrics</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Server performance and resource usage
-        </p>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <MetricCard
-          label="CPU Usage"
-          value={metrics ? `${metrics.cpu.toFixed(1)}%` : '—'}
-          sub={metrics ? `Load: ${metrics.load_avg.map((l) => l.toFixed(2)).join(', ')}` : ''}
-        />
-        <MetricCard
-          label="Memory"
-          value={metrics ? `${formatBytes(metrics.ram_used)}` : '—'}
-          sub={metrics ? `of ${formatBytes(metrics.ram_total)}` : ''}
-        />
-        <MetricCard
-          label="Disk"
-          value={metrics ? `${formatBytes(metrics.disk_used)}` : '—'}
-          sub={metrics ? `of ${formatBytes(metrics.disk_total)}` : ''}
-        />
-        <MetricCard
-          label="Network RX"
-          value={metrics ? `${formatBytes(metrics.network_rx)}` : '—'}
-        />
-        <MetricCard
-          label="Network TX"
-          value={metrics ? `${formatBytes(metrics.network_tx)}` : '—'}
-        />
-        <MetricCard
-          label="Uptime"
-          value={metrics ? formatUptime(metrics.uptime) : '—'}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <UsageBar label="CPU" percent={parseFloat(cpuPercent)} color="bg-blue-500" />
-        <UsageBar label="Memory" percent={parseFloat(ramPercent)} color="bg-green-500" />
-        <UsageBar label="Disk" percent={parseFloat(diskPercent)} color="bg-orange-500" />
-      </div>
-
-      <div className="border rounded-lg p-4">
-        <h2 className="text-sm font-medium mb-3">CPU & Memory (last 30 samples)</h2>
-        {history.length > 1 ? (
-          <div className="h-32 flex items-end gap-1">
-            {history.map((point, i) => (
-              <div key={i} className="flex-1 flex flex-col justify-end gap-px">
-                <div
-                  className="bg-blue-500 rounded-t"
-                  style={{ height: `${point.cpu}%` }}
-                />
-                <div
-                  className="bg-green-500 rounded-t"
-                  style={{ height: `${point.ram}%` }}
-                />
-              </div>
+      <PageHeader
+        title="Server Metrics"
+        description="Real-time server performance monitoring"
+        breadcrumbs={[{ label: 'Metrics' }]}
+        actions={
+          <div className="flex items-center gap-2">
+            {['1h', '6h', '24h', '7d'].map((range) => (
+              <button
+                key={range}
+                onClick={() => setTimeRange(range as any)}
+                className={cn(
+                  'px-3 py-1.5 text-xs font-medium rounded transition-colors',
+                  timeRange === range
+                    ? 'bg-primary text-white'
+                    : 'bg-accent text-text-secondary hover:text-foreground'
+                )}
+              >
+                {range}
+              </button>
             ))}
+            <Button variant="outline" size="sm" onClick={() => {}}>
+              <RefreshCw className="w-4 h-4 mr-1" />
+              Refresh
+            </Button>
           </div>
-        ) : (
-          <div className="h-32 flex items-center justify-center text-muted-foreground text-sm">
-            Collecting data...
+        }
+      />
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <Card className="relative overflow-hidden">
+          <div className="flex items-start justify-between mb-2">
+            <div className="p-2 bg-accent/50 rounded">
+              <Cpu className="w-4 h-4 text-text-secondary" />
+            </div>
+            <span className={cn('text-xs font-medium', getVariant(cpuPercent) === 'danger' ? 'text-danger' : getVariant(cpuPercent) === 'warning' ? 'text-warning' : 'text-success')}>
+              {getVariant(cpuPercent) === 'danger' ? 'Critical' : getVariant(cpuPercent) === 'warning' ? 'Warning' : 'Normal'}
+            </span>
           </div>
-        )}
-        <div className="flex gap-4 mt-2 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 bg-blue-500 rounded-full" /> CPU
-          </span>
-          <span className="flex items-center gap-1">
-            <span className="w-2 h-2 bg-green-500 rounded-full" /> Memory
-          </span>
+          <p className="text-2xl font-semibold">{formatPercentage(cpuPercent)}</p>
+          <p className="text-xs text-text-secondary">CPU Usage</p>
+          <div className="mt-2">
+            <ProgressBar value={cpuPercent} variant={getVariant(cpuPercent)} showLabel />
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-start justify-between mb-2">
+            <div className="p-2 bg-accent/50 rounded">
+              <MemoryStick className="w-4 h-4 text-text-secondary" />
+            </div>
+          </div>
+          <p className="text-2xl font-semibold">{formatBytes(ramUsed)}</p>
+          <p className="text-xs text-text-secondary">of {formatBytes(ramTotal)}</p>
+          <div className="mt-2">
+            <ProgressBar value={(ramUsed / ramTotal) * 100} variant={getVariant((ramUsed / ramTotal) * 100)} showLabel />
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-start justify-between mb-2">
+            <div className="p-2 bg-accent/50 rounded">
+              <HardDrive className="w-4 h-4 text-text-secondary" />
+            </div>
+          </div>
+          <p className="text-2xl font-semibold">{formatBytes(diskUsed)}</p>
+          <p className="text-xs text-text-secondary">of {formatBytes(diskTotal)}</p>
+          <div className="mt-2">
+            <ProgressBar value={(diskUsed / diskTotal) * 100} variant={getVariant((diskUsed / diskTotal) * 100)} showLabel />
+          </div>
+        </Card>
+
+        <Card>
+          <div className="flex items-start justify-between mb-2">
+            <div className="p-2 bg-accent/50 rounded">
+              <Activity className="w-4 h-4 text-text-secondary" />
+            </div>
+          </div>
+          <p className="text-2xl font-semibold">{metrics?.processes ?? '—'}</p>
+          <p className="text-xs text-text-secondary">Processes</p>
+          {metrics?.load_avg && (
+            <p className="text-xs text-text-secondary mt-1">
+              Load: {metrics.load_avg.join(', ')}
+            </p>
+          )}
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>CPU Usage Over Time</CardTitle>
+          </CardHeader>
+          <div className="h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={cpuHistory}>
+                <defs>
+                  <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#2563EB" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#2563EB" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#94A3B8' }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#94A3B8' }} tickFormatter={(v) => `${v}%`} />
+                <Tooltip
+                  contentStyle={{ background: '#1E293B', border: '1px solid #334155', borderRadius: '6px', fontSize: '12px' }}
+                  labelStyle={{ color: '#F8FAFC' }}
+                />
+                <Area type="monotone" dataKey="value" stroke="#2563EB" fill="url(#cpuGradient)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Memory Usage Over Time</CardTitle>
+          </CardHeader>
+          <div className="h-48">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={ramHistory}>
+                <defs>
+                  <linearGradient id="ramGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#16A34A" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#16A34A" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="time" tick={{ fontSize: 10, fill: '#94A3B8' }} />
+                <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: '#94A3B8' }} tickFormatter={(v) => `${v}%`} />
+                <Tooltip
+                  contentStyle={{ background: '#1E293B', border: '1px solid #334155', borderRadius: '6px', fontSize: '12px' }}
+                  labelStyle={{ color: '#F8FAFC' }}
+                />
+                <Area type="monotone" dataKey="value" stroke="#16A34A" fill="url(#ramGradient)" strokeWidth={2} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Network Traffic</CardTitle>
+        </CardHeader>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-primary/10 rounded">
+              <Network className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Inbound</p>
+              <p className="text-xl font-semibold">{metrics?.network_in ? formatBytes(metrics.network_in) + '/s' : '—'}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="p-3 bg-success/10 rounded">
+              <Network className="w-5 h-5 text-success rotate-180" />
+            </div>
+            <div>
+              <p className="text-sm text-text-secondary">Outbound</p>
+              <p className="text-xl font-semibold">{metrics?.network_out ? formatBytes(metrics.network_out) + '/s' : '—'}</p>
+            </div>
+          </div>
         </div>
-      </div>
-
-      <div className="border rounded-lg">
-        <div className="p-4 border-b">
-          <h2 className="text-sm font-medium">Top Processes</h2>
-        </div>
-        {loading ? (
-          <div className="p-8 text-center text-muted-foreground">Loading...</div>
-        ) : processes.length === 0 ? (
-          <div className="p-8 text-center text-muted-foreground">No process data available</div>
-        ) : (
-          <table className="w-full">
-            <thead>
-              <tr className="border-b bg-muted/50">
-                <th className="text-left p-3 text-xs font-medium">PID</th>
-                <th className="text-left p-3 text-xs font-medium">Name</th>
-                <th className="text-left p-3 text-xs font-medium">CPU</th>
-                <th className="text-left p-3 text-xs font-medium">Memory</th>
-                <th className="text-left p-3 text-xs font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {processes.map((proc) => (
-                <tr key={proc.pid} className="border-b hover:bg-muted/30">
-                  <td className="p-3 text-sm font-mono">{proc.pid}</td>
-                  <td className="p-3 text-sm">{proc.name}</td>
-                  <td className="p-3 text-sm">{proc.cpu.toFixed(1)}%</td>
-                  <td className="p-3 text-sm">{formatBytes(proc.ram)}</td>
-                  <td className="p-3 text-sm">
-                    <span className={`text-xs px-2 py-0.5 rounded ${
-                      proc.status === 'running' ? 'bg-green-500/10 text-green-500' : 'bg-yellow-500/10 text-yellow-500'
-                    }`}>
-                      {proc.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-    </div>
-  )
-}
-
-function MetricCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="border border-border bg-card p-4">
-      <div className="text-xs uppercase text-muted-foreground font-medium mb-1">
-        {label}
-      </div>
-      <div className="text-xl font-semibold">{value}</div>
-      {sub && <div className="text-xs text-muted-foreground mt-1">{sub}</div>}
-    </div>
-  )
-}
-
-function UsageBar({ label, percent, color }: { label: string; percent: number; color: string }) {
-  return (
-    <div className="border border-border bg-card p-4">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-xs font-medium">{label}</span>
-        <span className="text-sm font-mono">{percent.toFixed(1)}%</span>
-      </div>
-      <div className="h-2 bg-muted rounded-full overflow-hidden">
-        <div
-          className={`h-full ${color} transition-all duration-300`}
-          style={{ width: `${Math.min(percent, 100)}%` }}
-        />
-      </div>
+      </Card>
     </div>
   )
 }

@@ -1,7 +1,19 @@
 import { useEffect, useState, useCallback } from 'react'
-import { useParams } from 'react-router-dom'
-import { Folder, File, Upload, X } from 'lucide-react'
+import { useParams, useNavigate } from 'react-router-dom'
+import {
+  Folder, File, Upload, X, ChevronLeft, ChevronRight, Plus, Trash2,
+  Download, Edit, Eye, Copy, RefreshCw, FolderPlus, FilePlus, MoreHorizontal,
+  ArrowUp
+} from 'lucide-react'
+import { Card } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { Badge } from '../../components/ui/Badge'
+import { Modal } from '../../components/ui/Modal'
+import { Input, Label, FormGroup } from '../../components/ui/Input'
+import { PageHeader } from '../../components/ui/Misc'
 import api from '../../lib/api'
+import { formatBytes, formatDate } from '../../lib/utils'
+import { cn } from '../../lib/utils'
 
 interface FileItem {
   name: string
@@ -13,6 +25,7 @@ interface FileItem {
 
 export default function FileManager() {
   const { websiteId } = useParams<{ websiteId: string }>()
+  const navigate = useNavigate()
   const [files, setFiles] = useState<FileItem[]>([])
   const [currentPath, setCurrentPath] = useState('')
   const [loading, setLoading] = useState(true)
@@ -21,6 +34,9 @@ export default function FileManager() {
   const [fileContent, setFileContent] = useState('')
   const [showHidden, setShowHidden] = useState(false)
   const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set())
+  const [showContextMenu, setShowContextMenu] = useState<{ x: number; y: number; file: FileItem } | null>(null)
+  const [showNewFolderModal, setShowNewFolderModal] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
 
   const loadFiles = useCallback(async (path: string) => {
     if (!websiteId) return
@@ -44,6 +60,7 @@ export default function FileManager() {
   const navigateToFolder = (folderName: string) => {
     const newPath = currentPath ? `${currentPath}/${folderName}` : folderName
     loadFiles(newPath)
+    setSelectedFiles(new Set())
   }
 
   const navigateUp = () => {
@@ -52,6 +69,7 @@ export default function FileManager() {
     parts.pop()
     const newPath = parts.join('/')
     loadFiles(newPath)
+    setSelectedFiles(new Set())
   }
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,9 +144,12 @@ export default function FileManager() {
     }
   }
 
-  const toggleSelect = (fileName: string) => {
+  const toggleSelect = (fileName: string, e: React.MouseEvent) => {
+    e.stopPropagation()
     const newSelected = new Set(selectedFiles)
-    if (newSelected.has(fileName)) {
+    if (e.shiftKey && selectedFiles.size > 0) {
+      // Range select
+    } else if (newSelected.has(fileName)) {
       newSelected.delete(fileName)
     } else {
       newSelected.add(fileName)
@@ -136,167 +157,201 @@ export default function FileManager() {
     setSelectedFiles(newSelected)
   }
 
-  const filteredFiles = showHidden
-    ? files
-    : files.filter((f) => !f.name.startsWith('.'))
+  const handleContextMenu = (e: React.MouseEvent, file: FileItem) => {
+    e.preventDefault()
+    setShowContextMenu({ x: e.clientX, y: e.clientY, file })
+  }
+
+  const filteredFiles = showHidden ? files : files.filter((f) => !f.name.startsWith('.'))
+
+  const fileIcon = (type: 'file' | 'directory') => {
+    if (type === 'directory') return <Folder className="w-4 h-4 text-warning" />
+    return <File className="w-4 h-4 text-text-secondary" />
+  }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <h1 className="text-lg font-semibold">File Manager</h1>
-          {currentPath && (
-            <div className="flex items-center gap-2">
-              <button onClick={navigateUp} className="text-sm text-muted-foreground hover:text-foreground">
-                ← Up
-              </button>
-              <span className="text-sm text-muted-foreground">/ {currentPath}</span>
-            </div>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="space-y-4">
+      <PageHeader
+        title="File Manager"
+        description={websiteId || ''}
+        breadcrumbs={[
+          { label: 'Files', href: '/files' },
+          { label: websiteId || '' },
+        ]}
+      />
+
+      <Card padding="none">
+        <div className="p-3 flex items-center gap-3 border-b border-border">
+          <button
+            onClick={navigateUp}
+            disabled={!currentPath}
+            className="p-2 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-50"
+          >
+            <ArrowUp className="w-4 h-4" />
+          </button>
+
+          <div className="flex items-center gap-2 text-sm">
+            <button onClick={() => loadFiles('')} className="hover:text-primary transition-colors">
+              root
+            </button>
+            {currentPath.split('/').map((part, i) => (
+              <span key={i} className="flex items-center gap-2">
+                <span className="text-text-secondary">/</span>
+                <button
+                  onClick={() => loadFiles(currentPath.split('/').slice(0, i + 1).join('/'))}
+                  className="hover:text-primary transition-colors"
+                >
+                  {part}
+                </button>
+              </span>
+            ))}
+          </div>
+
+          <div className="flex-1" />
+
           <label className="flex items-center gap-2 text-sm cursor-pointer">
             <input
               type="checkbox"
               checked={showHidden}
               onChange={(e) => setShowHidden(e.target.checked)}
+              className="w-4 h-4 rounded border-border"
             />
-            Show hidden
+            <span className="text-text-secondary">Show hidden</span>
           </label>
-        </div>
-      </div>
 
-      <div className="flex items-center gap-4 mb-6">
-        <label className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-sm font-medium cursor-pointer hover:opacity-90">
-          <Upload size={16} />
-          Upload
-          <input type="file" className="hidden" onChange={handleUpload} />
-        </label>
-        {uploadProgress && <span className="text-sm text-muted-foreground">Uploading...</span>}
-      </div>
+          <label className="flex items-center gap-2 px-3 py-2 bg-primary text-white text-sm rounded cursor-pointer hover:bg-primary/90 transition-colors">
+            <Upload className="w-4 h-4" />
+            Upload
+            <input type="file" className="hidden" onChange={handleUpload} />
+          </label>
 
-      {loading ? (
-        <div className="text-muted-foreground">Loading files...</div>
-      ) : filteredFiles.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <p>No files found</p>
+          <button
+            onClick={() => setShowNewFolderModal(true)}
+            className="p-2 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
+          >
+            <FolderPlus className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => loadFiles(currentPath)}
+            className="p-2 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
         </div>
-      ) : (
-        <div className="border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 border-b border-border">
-              <tr>
-                <th className="text-left p-3 w-8"></th>
-                <th className="text-left p-3 font-medium">Name</th>
-                <th className="text-left p-3 font-medium">Type</th>
-                <th className="text-left p-3 font-medium">Size</th>
-                <th className="text-left p-3 font-medium">Modified</th>
-                <th className="text-left p-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredFiles.map((file) => (
-                <tr key={file.name} className="border-b border-border hover:bg-muted/30">
-                  <td className="p-3">
-                    <input
-                      type="checkbox"
-                      checked={selectedFiles.has(file.name)}
-                      onChange={() => toggleSelect(file.name)}
-                    />
-                  </td>
-                  <td className="p-3">
-                    {file.type === 'directory' ? (
+
+        {loading ? (
+          <div className="p-8 text-center text-text-secondary">Loading...</div>
+        ) : filteredFiles.length === 0 ? (
+          <div className="p-8 text-center text-text-secondary">No files found</div>
+        ) : (
+          <div className="divide-y divide-border">
+            {filteredFiles.map((file) => (
+              <div
+                key={file.name}
+                onClick={() => file.type === 'directory' ? navigateToFolder(file.name) : handleEdit(file.name)}
+                onContextMenu={(e) => handleContextMenu(e, file)}
+                className={cn(
+                  'flex items-center gap-3 p-3 hover:bg-accent/30 cursor-pointer transition-colors',
+                  selectedFiles.has(file.name) && 'bg-primary/10'
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedFiles.has(file.name)}
+                  onChange={() => {}}
+                  onClick={(e) => toggleSelect(file.name, e)}
+                  className="w-4 h-4 rounded border-border"
+                />
+                <span className="w-5">{fileIcon(file.type)}</span>
+                <span className="flex-1 text-sm font-medium truncate">{file.name}</span>
+                <span className="text-xs text-text-secondary w-24 text-right">
+                  {file.type === 'file' ? formatBytes(file.size) : '—'}
+                </span>
+                <span className="text-xs text-text-secondary w-40 text-right">
+                  {formatDate(new Date(file.modified_at * 1000).toISOString())}
+                </span>
+                <div className="flex items-center gap-1">
+                  {file.type === 'file' && (
+                    <>
                       <button
-                        onClick={() => navigateToFolder(file.name)}
-                        className="flex items-center gap-2 text-primary hover:underline"
+                        onClick={(e) => { e.stopPropagation(); handleEdit(file.name) }}
+                        className="p-1 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
                       >
-                        <Folder size={16} className="text-yellow-500" />
-                        {file.name}
+                        <Edit className="w-3.5 h-3.5" />
                       </button>
-                    ) : (
-                      <span className="flex items-center gap-2">
-                        <File size={16} className="text-muted-foreground" />
-                        {file.name}
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-3 text-muted-foreground capitalize">
-                    {file.type === 'directory' ? 'Folder' : 'File'}
-                  </td>
-                  <td className="p-3 text-muted-foreground">
-                    {file.type === 'file' ? formatSize(file.size) : '—'}
-                  </td>
-                  <td className="p-3 text-muted-foreground">
-                    {new Date(file.modified_at * 1000).toLocaleString()}
-                  </td>
-                  <td className="p-3">
-                    <div className="flex gap-2">
-                      {file.type === 'file' && (
-                        <>
-                          <button onClick={() => handleEdit(file.name)} className="text-primary hover:underline text-xs">
-                            Edit
-                          </button>
-                          <button onClick={() => handleDownload(file.name)} className="text-primary hover:underline text-xs">
-                            Download
-                          </button>
-                        </>
-                      )}
-                      {(file.name.endsWith('.zip') || file.name.endsWith('.tar.gz')) && (
-                        <button onClick={() => handleExtract(file.name)} className="text-primary hover:underline text-xs">
-                          Extract
-                        </button>
-                      )}
-                      <button onClick={() => handleDelete(file.name)} className="text-red-600 hover:underline text-xs">
-                        Delete
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDownload(file.name) }}
+                        className="p-1 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
+                      >
+                        <Download className="w-3.5 h-3.5" />
                       </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    </>
+                  )}
+                  {(file.name.endsWith('.zip') || file.name.endsWith('.tar.gz')) && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleExtract(file.name) }}
+                      className="p-1 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleDelete(file.name) }}
+                    className="p-1 text-text-secondary hover:text-danger hover:bg-danger/10 rounded transition-colors"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {editingFile && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card border border-border p-6 w-3/4 max-h-3/4 overflow-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium">{editingFile}</h3>
-              <button onClick={() => setEditingFile(null)} className="text-muted-foreground hover:text-foreground">
-                <X size={20} />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-3/4 max-h-3/4 bg-surface border border-border rounded-card shadow-xl flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-border">
+              <h3 className="font-semibold">{editingFile}</h3>
+              <button onClick={() => setEditingFile(null)} className="p-1 text-text-secondary hover:text-foreground">
+                <X className="w-4 h-4" />
               </button>
             </div>
             <textarea
               value={fileContent}
               onChange={(e) => setFileContent(e.target.value)}
-              className="w-full h-96 border border-border p-2 font-mono text-sm"
+              className="flex-1 p-4 bg-background font-mono text-sm resize-none focus:outline-none"
             />
-            <div className="flex gap-2 mt-4">
-              <button
-                onClick={handleSave}
-                className="bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => setEditingFile(null)}
-                className="border border-border px-4 py-2 text-sm hover:bg-muted"
-              >
-                Cancel
-              </button>
+            <div className="flex justify-end gap-3 p-4 border-t border-border">
+              <Button variant="outline" onClick={() => setEditingFile(null)}>Cancel</Button>
+              <Button onClick={handleSave}>Save</Button>
             </div>
           </div>
         </div>
       )}
+
+      <Modal
+        open={showNewFolderModal}
+        onClose={() => setShowNewFolderModal(false)}
+        title="Create Folder"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <FormGroup>
+            <Label>Folder Name</Label>
+            <Input
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              placeholder="new_folder"
+            />
+          </FormGroup>
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={() => setShowNewFolderModal(false)}>Cancel</Button>
+            <Button onClick={() => setShowNewFolderModal(false)}>Create</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
-}
-
-function formatSize(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const k = 1024
-  const sizes = ['B', 'KB', 'MB', 'GB']
-  const i = Math.floor(Math.log(bytes) / Math.log(k))
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
 }

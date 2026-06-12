@@ -1,32 +1,43 @@
-import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { RefreshCw, Download } from 'lucide-react'
+import { useEffect, useState, useRef } from 'react'
+import { FileText, Download, Search, Pause, Play, RefreshCw, Filter } from 'lucide-react'
+import { Card } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { Badge } from '../../components/ui/Badge'
+import { PageHeader } from '../../components/ui/Misc'
+import { Input } from '../../components/ui/Input'
 import api from '../../lib/api'
+import { cn } from '../../lib/utils'
 
-interface LogLine {
-  index: number
-  content: string
+interface LogEntry {
+  timestamp: string
+  level: 'info' | 'warn' | 'error'
+  message: string
+  source?: string
 }
 
 export default function LogViewer() {
-  const { id } = useParams<{ id: string }>()
-  const [accessLogs, setAccessLogs] = useState<LogLine[]>([])
-  const [errorLogs, setErrorLogs] = useState<LogLine[]>([])
+  const [logs, setLogs] = useState<LogEntry[]>([])
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'access' | 'error'>('access')
   const [filter, setFilter] = useState('')
-  const [lines, setLines] = useState(100)
+  const [levelFilter, setLevelFilter] = useState<string>('')
+  const [isLive, setIsLive] = useState(true)
+  const [autoRefresh, setAutoRefresh] = useState(false)
+  const scrollRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    loadLogs()
+    if (autoRefresh) {
+      const interval = setInterval(loadLogs, 3000)
+      return () => clearInterval(interval)
+    }
+  }, [autoRefresh])
 
   const loadLogs = async () => {
-    if (!id) return
-    setLoading(true)
     try {
-      const [accessRes, errorRes] = await Promise.all([
-        api.get(`/websites/${id}/logs/access?lines=${lines}`),
-        api.get(`/websites/${id}/logs/error?lines=${lines}`),
-      ])
-      setAccessLogs(formatLogs(accessRes.data.data.lines || []))
-      setErrorLogs(formatLogs(errorRes.data.data.lines || []))
+      const res = await api.get('/logs/system')
+      if (res.data.success) {
+        setLogs(res.data.data || [])
+      }
     } catch (err) {
       console.error(err)
     } finally {
@@ -34,97 +45,109 @@ export default function LogViewer() {
     }
   }
 
-  useEffect(() => {
-    loadLogs()
-    const interval = setInterval(loadLogs, 5000)
-    return () => clearInterval(interval)
-  }, [id, lines])
+  const filteredLogs = logs.filter((log) => {
+    const matchesSearch = !filter || log.message.toLowerCase().includes(filter.toLowerCase())
+    const matchesLevel = !levelFilter || log.level === levelFilter
+    return matchesSearch && matchesLevel
+  })
 
-  const formatLogs = (rawLogs: string[]): LogLine[] => {
-    return rawLogs.map((content, index) => ({ index, content }))
+  const levelColors = {
+    info: 'text-primary',
+    warn: 'text-warning',
+    error: 'text-danger',
   }
 
-  const filteredLogs = activeTab === 'access'
-    ? accessLogs.filter(l => l.content.toLowerCase().includes(filter.toLowerCase()))
-    : errorLogs.filter(l => l.content.toLowerCase().includes(filter.toLowerCase()))
+  const levelBgColors = {
+    info: 'bg-primary/10',
+    warn: 'bg-warning/10',
+    error: 'bg-danger/10',
+  }
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-lg font-semibold">Website Logs</h1>
-        <div className="flex items-center gap-2">
-          <select
-            value={lines}
-            onChange={(e) => setLines(Number(e.target.value))}
-            className="border border-border px-2 py-1 text-sm"
-          >
-            <option value={50}>50 lines</option>
-            <option value={100}>100 lines</option>
-            <option value={500}>500 lines</option>
-            <option value={1000}>1000 lines</option>
-          </select>
-          <button
-            onClick={loadLogs}
-            className="flex items-center gap-1 px-3 py-1 text-sm border border-border hover:bg-muted"
-          >
-            <RefreshCw size={14} />
-            Refresh
-          </button>
-          <button className="flex items-center gap-1 px-3 py-1 text-sm border border-border hover:bg-muted">
-            <Download size={14} />
-            Download
-          </button>
-        </div>
-      </div>
-
-      <div className="flex border-b border-border mb-4">
-        <button
-          onClick={() => setActiveTab('access')}
-          className={`px-4 py-2 text-sm font-medium ${activeTab === 'access' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
-        >
-          Access Log
-        </button>
-        <button
-          onClick={() => setActiveTab('error')}
-          className={`px-4 py-2 text-sm font-medium ${activeTab === 'error' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
-        >
-          Error Log
-        </button>
-      </div>
-
-      <p className="text-sm text-muted-foreground mb-4">
-        {activeTab === 'access'
-          ? 'Access Log · Records every visit to your website'
-          : 'Error Log · Records errors and warnings from your website'
+    <div className="space-y-6">
+      <PageHeader
+        title="System Logs"
+        description="Real-time server log monitoring"
+        breadcrumbs={[
+          { label: 'Logs' },
+        ]}
+        actions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant={autoRefresh ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => setAutoRefresh(!autoRefresh)}
+            >
+              <RefreshCw className={cn('w-4 h-4 mr-1', autoRefresh && 'animate-spin')} />
+              Auto-refresh
+            </Button>
+            <Button variant="outline" size="sm" onClick={loadLogs}>
+              <RefreshCw className="w-4 h-4 mr-1" />
+              Refresh
+            </Button>
+          </div>
         }
-      </p>
-
-      <input
-        type="text"
-        placeholder="Filter logs..."
-        value={filter}
-        onChange={(e) => setFilter(e.target.value)}
-        className="w-full border border-border px-3 py-2 text-sm mb-4"
       />
 
-      {loading ? (
-        <div className="text-muted-foreground">Loading logs...</div>
-      ) : filteredLogs.length === 0 ? (
-        <div className="text-muted-foreground text-center py-8">No log entries</div>
-      ) : (
-        <div className="border border-border bg-black text-white font-mono text-xs overflow-auto max-h-[calc(100vh-16rem)]">
-          <table className="w-full">
-            <tbody>
-              {filteredLogs.map((log) => (
-                <tr key={log.index} className="border-b border-gray-800">
-                  <td className="px-3 py-1 text-gray-500 w-12">{log.index + 1}</td>
-                  <td className="px-3 py-1 whitespace-pre-wrap break-all">{log.content}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <Card padding="none">
+        <div className="p-4 flex items-center gap-4 border-b border-border">
+          <div className="w-64">
+            <Input
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Search logs..."
+            />
+          </div>
+          <select
+            value={levelFilter}
+            onChange={(e) => setLevelFilter(e.target.value)}
+            className="h-9 px-3 bg-surface border border-border rounded text-sm"
+          >
+            <option value="">All Levels</option>
+            <option value="info">Info</option>
+            <option value="warn">Warning</option>
+            <option value="error">Error</option>
+          </select>
+          <div className="flex-1" />
+          <div className="flex items-center gap-4 text-xs text-text-secondary">
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-primary" /> Info
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-warning" /> Warning
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-danger" /> Error
+            </span>
+          </div>
         </div>
-      )}
+
+        <div ref={scrollRef} className="h-[calc(100vh-20rem)] overflow-auto font-mono text-xs">
+          {loading ? (
+            <div className="p-8 text-center text-text-secondary">Loading logs...</div>
+          ) : filteredLogs.length === 0 ? (
+            <div className="p-8 text-center text-text-secondary">No logs found</div>
+          ) : (
+            <div className="divide-y divide-border">
+              {filteredLogs.map((log, i) => (
+                <div
+                  key={i}
+                  className={cn('flex items-start gap-3 p-3 hover:bg-accent/30 transition-colors', levelBgColors[log.level])}
+                >
+                  <span className="text-text-secondary shrink-0">{log.timestamp}</span>
+                  <span className={cn('w-16 font-medium shrink-0 uppercase', levelColors[log.level])}>
+                    {log.level}
+                  </span>
+                  {log.source && (
+                    <span className="text-text-secondary shrink-0">[{log.source}]</span>
+                  )}
+                  <span className="text-foreground flex-1">{log.message}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </Card>
     </div>
   )
 }

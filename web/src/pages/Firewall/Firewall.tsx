@@ -1,15 +1,25 @@
 import { useEffect, useState } from 'react'
-import { Shield, Plus, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Shield, Plus, RefreshCw, Trash2, CheckCircle, XCircle, Globe, Lock, Server } from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardDescription } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { Badge, StatusBadge } from '../../components/ui/Badge'
+import { Table } from '../../components/ui/Table'
+import { PageHeader } from '../../components/ui/Misc'
+import { Modal } from '../../components/ui/Modal'
+import { Input, Label, Select, FormGroup } from '../../components/ui/Input'
 import api from '../../lib/api'
+import { formatDate } from '../../lib/utils'
+import { cn } from '../../lib/utils'
 
 interface FirewallRule {
   id: number
   name: string
-  description: string
-  action: string
+  action: 'allow' | 'deny'
+  protocol: 'tcp' | 'udp' | 'all'
   port: string
-  protocol: string
   source: string
+  enabled: boolean
   created_at: string
 }
 
@@ -18,20 +28,15 @@ export default function Firewall() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [formData, setFormData] = useState({
-    name: '',
-    description: '',
-    action: 'allow',
-    port: '',
-    protocol: 'tcp',
-    source: 'any',
+    name: '', action: 'allow', protocol: 'tcp', port: '', source: '0.0.0.0/0',
   })
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     loadRules()
   }, [])
 
   const loadRules = async () => {
-    setLoading(true)
     try {
       const res = await api.get('/firewall/rules')
       setRules(res.data.data || [])
@@ -42,201 +47,221 @@ export default function Firewall() {
     }
   }
 
-  const createRule = async () => {
+  const handleCreate = async () => {
+    if (!formData.name || !formData.port) return
+    setSaving(true)
     try {
       await api.post('/firewall/rules', formData)
       setShowModal(false)
-      setFormData({ name: '', description: '', action: 'allow', port: '', protocol: 'tcp', source: 'any' })
+      setFormData({ name: '', action: 'allow', protocol: 'tcp', port: '', source: '0.0.0.0/0' })
       loadRules()
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      alert(err.response?.data?.error?.user_message || 'Failed to create rule')
+    } finally {
+      setSaving(false)
     }
   }
 
-  const deleteRule = async (id: number) => {
-    if (!confirm('Delete this firewall rule?')) return
+  const handleToggle = async (id: number, enabled: boolean) => {
+    try {
+      await api.put(`/firewall/rules/${id}`, { enabled: !enabled })
+      loadRules()
+    } catch (err: any) {
+      alert(err.response?.data?.error?.user_message || 'Failed to update rule')
+    }
+  }
+
+  const handleDelete = async (id: number) => {
+    if (!confirm('Delete this rule?')) return
     try {
       await api.delete(`/firewall/rules/${id}`)
-      loadRules()
-    } catch (err) {
-      console.error(err)
+      setRules(rules.filter((r) => r.id !== id))
+    } catch (err: any) {
+      alert(err.response?.data?.error?.user_message || 'Failed to delete')
     }
   }
 
-  const getPortDescription = (port: string, _protocol: string): string => {
-    const portMap: Record<string, string> = {
-      '22': 'SSH · Secure shell for server access',
-      '80': 'HTTP · Standard web traffic',
-      '443': 'HTTPS · Encrypted web traffic',
-      '8080': 'HTTP Alt · Alternative web port',
-      '25': 'SMTP · Email sending',
-      '587': 'SMTP Secure · Email submission',
-      '993': 'IMAPS · Secure email retrieval',
-      '995': 'POP3S · Secure email retrieval',
-      '3306': 'MySQL · Database access',
-      '5432': 'PostgreSQL · Database access',
-    }
-    const desc = portMap[port] || ''
-    return desc
-  }
+  const columns = [
+    {
+      key: 'name',
+      header: 'Rule',
+      render: (rule: FirewallRule) => (
+        <div className="flex items-center gap-3">
+          <div className={cn('w-8 h-8 rounded flex items-center justify-center',
+            rule.action === 'allow' ? 'bg-success/10' : 'bg-danger/10')}>
+            {rule.action === 'allow' ? (
+              <CheckCircle className="w-4 h-4 text-success" />
+            ) : (
+              <XCircle className="w-4 h-4 text-danger" />
+            )}
+          </div>
+          <div>
+            <p className="font-medium text-sm">{rule.name}</p>
+            <p className="text-xs text-text-secondary capitalize">
+              {rule.action} {rule.protocol.toUpperCase()} port {rule.port}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'source',
+      header: 'Source',
+      render: (rule: FirewallRule) => (
+        <span className="text-xs font-mono text-text-secondary">{rule.source}</span>
+      ),
+    },
+    {
+      key: 'enabled',
+      header: 'Status',
+      render: (rule: FirewallRule) => (
+        <button
+          onClick={() => handleToggle(rule.id, rule.enabled)}
+          className={cn(
+            'relative w-10 h-5 rounded-full transition-colors',
+            rule.enabled ? 'bg-success' : 'bg-border'
+          )}
+        >
+          <span className={cn(
+            'absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform',
+            rule.enabled ? 'left-5.5' : 'left-0.5'
+          )} />
+        </button>
+      ),
+    },
+    {
+      key: 'created',
+      header: 'Created',
+      render: (rule: FirewallRule) => (
+        <span className="text-xs text-text-secondary">{formatDate(rule.created_at)}</span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '80px',
+      render: (rule: FirewallRule) => (
+        <button
+          onClick={() => handleDelete(rule.id)}
+          className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded transition-colors"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      ),
+    },
+  ]
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-lg font-semibold">Firewall</h1>
-          <p className="text-sm text-muted-foreground">
-            Firewall Rule · Controls which network traffic can reach your server
-          </p>
-        </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90"
-        >
-          <Plus size={16} />
-          Create Rule
-        </button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Firewall"
+        description="Control incoming and outgoing network traffic"
+        breadcrumbs={[{ label: 'Firewall' }]}
+        actions={
+          <Button onClick={() => setShowModal(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Rule
+          </Button>
+        }
+      />
 
-      {loading ? (
-        <div className="text-muted-foreground">Loading rules...</div>
-      ) : rules.length === 0 ? (
-        <div className="text-center py-12 border border-border">
-          <Shield size={48} className="mx-auto text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">No firewall rules configured</p>
-        </div>
-      ) : (
-        <div className="border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 border-b border-border">
-              <tr>
-                <th className="text-left p-3 font-medium">Name</th>
-                <th className="text-left p-3 font-medium">Action</th>
-                <th className="text-left p-3 font-medium">Port</th>
-                <th className="text-left p-3 font-medium">Source</th>
-                <th className="text-left p-3 font-medium">Description</th>
-                <th className="text-left p-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rules.map((rule) => (
-                <tr key={rule.id} className="border-b border-border hover:bg-muted/30">
-                  <td className="p-3 font-medium">{rule.name}</td>
-                  <td className="p-3">
-                    <span className={`text-xs px-2 py-1 rounded ${rule.action === 'allow' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                      {rule.action}
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    {rule.port}/{rule.protocol}
-                    {getPortDescription(rule.port, rule.protocol) && (
-                      <span className="text-xs text-muted-foreground ml-2">
-                        · {getPortDescription(rule.port, rule.protocol)}
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-3 text-muted-foreground">{rule.source === 'any' ? 'Any IP' : rule.source}</td>
-                  <td className="p-3 text-muted-foreground text-xs">{rule.description || '—'}</td>
-                  <td className="p-3">
-                    <button onClick={() => deleteRule(rule.id)} className="text-red-600 hover:underline text-xs">
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card border border-border p-6 w-96">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium">Create Firewall Rule</h3>
-              <button onClick={() => setShowModal(false)} className="text-muted-foreground hover:text-foreground">
-                <X size={20} />
-              </button>
+      <Card padding="none">
+        <div className="p-4 border-b border-border">
+          <div className="flex items-center gap-4">
+            <div className="p-2 bg-primary/10 rounded">
+              <Shield className="w-5 h-5 text-primary" />
             </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm mb-1">Rule Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full border border-border px-3 py-2 text-sm"
-                  placeholder="SSH Access"
-                />
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Action</label>
-                <select
-                  value={formData.action}
-                  onChange={(e) => setFormData({ ...formData, action: e.target.value })}
-                  className="w-full border border-border px-3 py-2 text-sm"
-                >
-                  <option value="allow">Allow</option>
-                  <option value="deny">Deny</option>
-                </select>
-              </div>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <label className="block text-sm mb-1">Port</label>
-                  <input
-                    type="text"
-                    value={formData.port}
-                    onChange={(e) => setFormData({ ...formData, port: e.target.value })}
-                    className="w-full border border-border px-3 py-2 text-sm"
-                    placeholder="22"
-                  />
-                </div>
-                <div className="w-24">
-                  <label className="block text-sm mb-1">Protocol</label>
-                  <select
-                    value={formData.protocol}
-                    onChange={(e) => setFormData({ ...formData, protocol: e.target.value })}
-                    className="w-full border border-border px-3 py-2 text-sm"
-                  >
-                    <option value="tcp">TCP</option>
-                    <option value="udp">UDP</option>
-                    <option value="both">Both</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Source IP</label>
-                <input
-                  type="text"
-                  value={formData.source}
-                  onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                  className="w-full border border-border px-3 py-2 text-sm"
-                  placeholder="any or 192.168.1.0/24"
-                />
-                <p className="text-xs text-muted-foreground mt-1">Use 'any' for any IP, or CIDR notation like '192.168.1.0/24'</p>
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Description (optional)</label>
-                <input
-                  type="text"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full border border-border px-3 py-2 text-sm"
-                  placeholder="Allow SSH from office network"
-                />
-              </div>
-
-              <button
-                onClick={createRule}
-                className="w-full bg-primary text-primary-foreground py-2 text-sm font-medium hover:opacity-90"
-              >
-                Create Rule
-              </button>
+            <div>
+              <p className="font-medium">{rules.filter(r => r.enabled).length} active rules</p>
+              <p className="text-xs text-text-secondary">Protecting your server</p>
             </div>
           </div>
         </div>
-      )}
+        <Table
+          columns={columns}
+          data={rules}
+          keyField="id"
+          loading={loading}
+          emptyMessage="No firewall rules configured"
+        />
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="text-center">
+          <Globe className="w-8 h-8 mx-auto text-success mb-2" />
+          <p className="font-medium">HTTP/HTTPS</p>
+          <p className="text-xs text-text-secondary mt-1">Ports 80, 443</p>
+        </Card>
+        <Card className="text-center">
+          <Server className="w-8 h-8 mx-auto text-primary mb-2" />
+          <p className="font-medium">SSH</p>
+          <p className="text-xs text-text-secondary mt-1">Port 22 (rate limited)</p>
+        </Card>
+        <Card className="text-center">
+          <Lock className="w-8 h-8 mx-auto text-warning mb-2" />
+          <p className="font-medium">Panel</p>
+          <p className="text-xs text-text-secondary mt-1">Port 8080</p>
+        </Card>
+      </div>
+
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        title="Add Firewall Rule"
+        size="sm"
+      >
+        <div className="space-y-4">
+          <FormGroup>
+            <Label>Rule Name</Label>
+            <Input
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="SSH Access"
+            />
+          </FormGroup>
+          <FormGroup>
+            <Label>Action</Label>
+            <Select
+              value={formData.action}
+              onChange={(e) => setFormData({ ...formData, action: e.target.value })}
+            >
+              <option value="allow">Allow</option>
+              <option value="deny">Deny</option>
+            </Select>
+          </FormGroup>
+          <FormGroup>
+            <Label>Protocol</Label>
+            <Select
+              value={formData.protocol}
+              onChange={(e) => setFormData({ ...formData, protocol: e.target.value })}
+            >
+              <option value="tcp">TCP</option>
+              <option value="udp">UDP</option>
+              <option value="all">All</option>
+            </Select>
+          </FormGroup>
+          <FormGroup>
+            <Label>Port</Label>
+            <Input
+              value={formData.port}
+              onChange={(e) => setFormData({ ...formData, port: e.target.value })}
+              placeholder="22 or 8000-9000"
+            />
+          </FormGroup>
+          <FormGroup>
+            <Label>Source IP / CIDR</Label>
+            <Input
+              value={formData.source}
+              onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+              placeholder="0.0.0.0/0 or 192.168.1.0/24"
+            />
+          </FormGroup>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
+            <Button onClick={handleCreate} loading={saving}>Create Rule</Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }

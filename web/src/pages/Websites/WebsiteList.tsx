@@ -1,54 +1,82 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import {
+  Plus, Globe, Search, Filter, MoreHorizontal, Trash2, PauseCircle,
+  CheckCircle, XCircle, ExternalLink, RefreshCw, ChevronDown, Copy
+} from 'lucide-react'
+import { Card } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { Badge, StatusBadge } from '../../components/ui/Badge'
+import { Table } from '../../components/ui/Table'
+import { SearchInput } from '../../components/ui/SearchInput'
+import { PageHeader } from '../../components/ui/Misc'
+import { CopyButton } from '../../components/ui/Misc'
+import { Modal, ConfirmModal } from '../../components/ui/Modal'
 import api from '../../lib/api'
+import { formatDate } from '../../lib/utils'
 
 interface Website {
   id: number
   domain: string
+  document_root: string
   php_version: string
   web_server: string
   ssl_enabled: boolean
   ssl_expiry: string | null
   status: string
   created_at: string
-}
-
-interface ListResponse {
-  success: boolean
-  data: Website[]
-  meta: {
-    total: number
-    page: number
-    limit: number
-    pages: number
-  }
+  traffic?: number
 }
 
 export default function WebsiteList() {
+  const navigate = useNavigate()
   const [websites, setWebsites] = useState<Website[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const navigate = useNavigate()
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [selectedWebsite, setSelectedWebsite] = useState<Website | null>(null)
+  const [showMenu, setShowMenu] = useState<number | null>(null)
+  const [actionLoading, setActionLoading] = useState<number | null>(null)
 
   useEffect(() => {
-    api.get('/websites')
-      .then((res) => {
-        const data = res.data as ListResponse
-        setWebsites(data.data || [])
-      })
-      .catch((err) => {
-        setError(err.response?.data?.error?.user_message || 'Failed to load websites')
-      })
-      .finally(() => setLoading(false))
+    loadWebsites()
   }, [])
 
+  const loadWebsites = async () => {
+    try {
+      const res = await api.get('/websites')
+      setWebsites(res.data.data || [])
+    } catch (err: any) {
+      setError(err.response?.data?.error?.user_message || 'Failed to load websites')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleSuspend = async (id: number) => {
-    if (!confirm('Suspend this website?')) return
+    setActionLoading(id)
     try {
       await api.post(`/websites/${id}/suspend`)
-      navigate(0)
+      loadWebsites()
     } catch (err: any) {
       alert(err.response?.data?.error?.user_message || 'Failed to suspend')
+    } finally {
+      setActionLoading(null)
+      setShowMenu(null)
+    }
+  }
+
+  const handleRestore = async (id: number) => {
+    setActionLoading(id)
+    try {
+      await api.post(`/websites/${id}/restore`)
+      loadWebsites()
+    } catch (err: any) {
+      alert(err.response?.data?.error?.user_message || 'Failed to restore')
+    } finally {
+      setActionLoading(null)
+      setShowMenu(null)
     }
   }
 
@@ -56,115 +84,211 @@ export default function WebsiteList() {
     if (!confirm('Move this website to trash?')) return
     try {
       await api.delete(`/websites/${id}`)
-      setWebsites(websites.filter(w => w.id !== id))
+      setWebsites(websites.filter((w) => w.id !== id))
     } catch (err: any) {
       alert(err.response?.data?.error?.user_message || 'Failed to delete')
     }
+    setShowMenu(null)
   }
 
-  if (loading) {
-    return <div className="p-6 text-muted-foreground">Loading websites...</div>
-  }
+  const filteredWebsites = websites.filter((site) => {
+    const matchesSearch = site.domain.toLowerCase().includes(search.toLowerCase())
+    const matchesStatus = !statusFilter || site.status === statusFilter
+    return matchesSearch && matchesStatus
+  })
+
+  const columns = [
+    {
+      key: 'domain',
+      header: 'Domain',
+      sortable: true,
+      render: (site: Website) => (
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded bg-accent/50 flex items-center justify-center">
+            <Globe className="w-4 h-4 text-text-secondary" />
+          </div>
+          <div>
+            <p className="font-medium text-foreground">{site.domain}</p>
+            <p className="text-xs text-text-secondary font-mono">{site.document_root}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'runtime',
+      header: 'Runtime',
+      render: (site: Website) => (
+        <div>
+          <p className="text-sm">PHP {site.php_version}</p>
+          <p className="text-xs text-text-secondary capitalize">{site.web_server}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'ssl',
+      header: 'SSL',
+      render: (site: Website) => (
+        site.ssl_enabled ? (
+          <div className="flex items-center gap-1.5">
+            <CheckCircle className="w-3.5 h-3.5 text-success" />
+            <span className="text-xs text-success">Active</span>
+            {site.ssl_expiry && (
+              <span className="text-xs text-text-secondary">
+                ({new Date(site.ssl_expiry) < new Date(Date.now() + 14 * 86400000) ? '⚠️ ' : ''}
+                {formatDate(site.ssl_expiry)})
+              </span>
+            )}
+          </div>
+        ) : (
+          <span className="text-xs text-text-secondary">Not configured</span>
+        )
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      sortable: true,
+      render: (site: Website) => <StatusBadge status={site.status} />,
+    },
+    {
+      key: 'created',
+      header: 'Created',
+      sortable: true,
+      render: (site: Website) => (
+        <span className="text-xs text-text-secondary">{formatDate(site.created_at)}</span>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '48px',
+      render: (site: Website) => (
+        <div className="relative">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setShowMenu(showMenu === site.id ? null : site.id)
+              setSelectedWebsite(site)
+            }}
+            className="p-1.5 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
+          >
+            <MoreHorizontal className="w-4 h-4" />
+          </button>
+          {showMenu === site.id && (
+            <>
+              <div
+                className="fixed inset-0 z-10"
+                onClick={() => setShowMenu(null)}
+              />
+              <div className="absolute right-0 top-full mt-1 w-48 bg-surface border border-border rounded-card shadow-xl z-20 py-1">
+                <Link
+                  to={`/websites/${site.id}`}
+                  className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors"
+                  onClick={() => setShowMenu(null)}
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  View Details
+                </Link>
+                {site.status === 'active' && (
+                  <button
+                    onClick={() => handleSuspend(site.id)}
+                    disabled={actionLoading === site.id}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors text-warning"
+                  >
+                    <PauseCircle className="w-3.5 h-3.5" />
+                    {actionLoading === site.id ? 'Suspending...' : 'Suspend'}
+                  </button>
+                )}
+                {site.status === 'suspended' && (
+                  <button
+                    onClick={() => handleRestore(site.id)}
+                    disabled={actionLoading === site.id}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors text-success"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    {actionLoading === site.id ? 'Restoring...' : 'Restore'}
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(site.domain)
+                    setShowMenu(null)
+                  }}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  Copy Domain
+                </button>
+                <hr className="my-1 border-border" />
+                <button
+                  onClick={() => handleDelete(site.id)}
+                  className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-accent/50 transition-colors text-danger"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Move to Trash
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      ),
+    },
+  ]
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-lg font-semibold">Websites</h1>
-        <Link
-          to="/websites/create"
-          className="bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90"
-        >
-          Create Website
-        </Link>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Websites"
+        description="Manage your websites and applications"
+        breadcrumbs={[{ label: 'Websites' }]}
+        actions={
+          <Link
+            to="/websites/create"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded hover:bg-primary/90 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            Create Website
+          </Link>
+        }
+      />
 
-      {error && (
-        <div className="mb-4 text-sm text-red-600 border border-red-200 bg-red-50 p-3">
-          {error}
-        </div>
-      )}
-
-      {websites.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <p className="mb-2">No websites yet</p>
-          <Link to="/websites/create" className="text-primary hover:underline">
-            Create your first website
+      <Card padding="none">
+        <div className="p-4 flex items-center gap-4 border-b border-border">
+          <div className="w-64">
+            <SearchInput
+              value={search}
+              onChange={setSearch}
+              placeholder="Search domains..."
+            />
+          </div>
+          <select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            className="h-9 px-3 bg-surface border border-border rounded text-sm text-foreground"
+          >
+            <option value="">All Status</option>
+            <option value="active">Active</option>
+            <option value="suspended">Suspended</option>
+          </select>
+          <div className="flex-1" />
+          <Link
+            to="/websites/trash"
+            className="flex items-center gap-2 px-3 py-2 text-sm text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
+          >
+            <Trash2 className="w-4 h-4" />
+            Trash
           </Link>
         </div>
-      ) : (
-        <div className="border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 border-b border-border">
-              <tr>
-                <th className="text-left p-3 font-medium">Domain</th>
-                <th className="text-left p-3 font-medium">PHP Version</th>
-                <th className="text-left p-3 font-medium">Web Server</th>
-                <th className="text-left p-3 font-medium">SSL</th>
-                <th className="text-left p-3 font-medium">Status</th>
-                <th className="text-left p-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {websites.map((site) => (
-                <tr key={site.id} className="border-b border-border hover:bg-muted/30">
-                  <td className="p-3">
-                    <Link to={`/websites/${site.id}`} className="text-primary hover:underline">
-                      {site.domain}
-                    </Link>
-                  </td>
-                  <td className="p-3 text-muted-foreground">
-                    PHP {site.php_version}
-                    <span className="block text-xs text-muted-foreground">
-                      The programming language your website's code runs on
-                    </span>
-                  </td>
-                  <td className="p-3 text-muted-foreground capitalize">{site.web_server}</td>
-                  <td className="p-3">
-                    {site.ssl_enabled ? (
-                      <span className="text-green-600">Active</span>
-                    ) : (
-                      <span className="text-muted-foreground">None</span>
-                    )}
-                  </td>
-                  <td className="p-3">
-                    <span className={`px-2 py-0.5 text-xs rounded ${
-                      site.status === 'active' ? 'bg-green-100 text-green-700' :
-                      site.status === 'suspended' ? 'bg-yellow-100 text-yellow-700' :
-                      'bg-gray-100 text-gray-700'
-                    }`}>
-                      {site.status}
-                    </span>
-                  </td>
-                  <td className="p-3">
-                    <div className="flex gap-2">
-                      <Link
-                        to={`/websites/${site.id}`}
-                        className="text-primary hover:underline text-xs"
-                      >
-                        View
-                      </Link>
-                      {site.status === 'active' && (
-                        <button
-                          onClick={() => handleSuspend(site.id)}
-                          className="text-yellow-600 hover:underline text-xs"
-                        >
-                          Suspend
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDelete(site.id)}
-                        className="text-red-600 hover:underline text-xs"
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+
+        <Table
+          columns={columns}
+          data={filteredWebsites}
+          keyField="id"
+          onRowClick={(site) => navigate(`/websites/${site.id}`)}
+          loading={loading}
+          emptyMessage="No websites found. Create your first website to get started."
+        />
+      </Card>
     </div>
   )
 }

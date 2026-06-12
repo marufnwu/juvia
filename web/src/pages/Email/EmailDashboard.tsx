@@ -1,6 +1,20 @@
 import { useEffect, useState } from 'react'
-import { Plus, CheckCircle, XCircle } from 'lucide-react'
+import {
+  Plus, Mail, CheckCircle, XCircle, AlertTriangle, Copy, RefreshCw,
+  Users, Forward, AtSign, Shield, Globe
+} from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardDescription } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { Badge, StatusBadge } from '../../components/ui/Badge'
+import { Tabs, TabPanel } from '../../components/ui/Tabs'
+import { Table } from '../../components/ui/Table'
+import { PageHeader } from '../../components/ui/Misc'
+import { CopyButton } from '../../components/ui/Misc'
+import { Modal } from '../../components/ui/Modal'
+import { Input, Label, FormGroup, FormError } from '../../components/ui/Input'
 import api from '../../lib/api'
+import { formatDate, formatBytes } from '../../lib/utils'
+import { cn } from '../../lib/utils'
 
 interface Mailbox {
   id: number
@@ -29,32 +43,36 @@ interface Forwarder {
 }
 
 interface DeliverabilityResult {
-  spf: { status: boolean; record: string; message: string; recommendation: string }
-  dkim: { status: boolean; record: string; message: string; recommendation: string }
-  dmarc: { status: boolean; record: string; message: string; recommendation: string }
-  ptr: { status: boolean; ip: string; message: string; recommendation: string }
+  spf: { status: boolean; record: string; message: string }
+  dkim: { status: boolean; record: string; message: string }
+  dmarc: { status: boolean; record: string; message: string }
+  ptr: { status: boolean; ip: string; message: string }
 }
 
 export default function EmailDashboard() {
-  const [activeTab, setActiveTab] = useState<'mailboxes' | 'aliases' | 'forwarders' | 'catchall' | 'deliverability'>('mailboxes')
+  const [activeTab, setActiveTab] = useState('mailboxes')
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([])
   const [aliases, setAliases] = useState<Alias[]>([])
   const [forwarders, setForwarders] = useState<Forwarder[]>([])
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [createType, setCreateType] = useState<'mailbox' | 'alias' | 'forwarder'>('mailbox')
+  const [showModal, setShowModal] = useState(false)
+  const [modalType, setModalType] = useState<'mailbox' | 'alias' | 'forwarder'>('mailbox')
+  const [loading, setLoading] = useState(true)
   const [deliverabilityDomain, setDeliverabilityDomain] = useState('')
   const [deliverabilityResult, setDeliverabilityResult] = useState<DeliverabilityResult | null>(null)
-
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    quota: 10737418240,
-    display_name: '',
-    domain: '',
-    source: '',
-    destination: '',
-    forward_to: '',
+    email: '', password: '', quota: 10737418240, display_name: '',
+    domain: '', source: '', destination: '', forward_to: '',
   })
+  const [formError, setFormError] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const tabs = [
+    { id: 'mailboxes', label: 'Mailboxes', count: mailboxes.length },
+    { id: 'aliases', label: 'Aliases', count: aliases.length },
+    { id: 'forwarders', label: 'Forwarders', count: forwarders.length },
+    { id: 'catchall', label: 'Catch-All' },
+    { id: 'deliverability', label: 'Deliverability' },
+  ]
 
   useEffect(() => {
     loadData()
@@ -62,86 +80,67 @@ export default function EmailDashboard() {
 
   const loadData = async () => {
     try {
-      const [mboxRes, aliasRes, fwdRes] = await Promise.all([
+      const [mboxRes, aliasRes, fwdRes] = await Promise.allSettled([
         api.get('/email/mailboxes'),
         api.get('/email/aliases'),
         api.get('/email/forwarders'),
       ])
-      setMailboxes(mboxRes.data.data || [])
-      setAliases(aliasRes.data.data || [])
-      setForwarders(fwdRes.data.data || [])
+      if (mboxRes.status === 'fulfilled') setMailboxes(mboxRes.value.data.data || [])
+      if (aliasRes.status === 'fulfilled') setAliases(aliasRes.value.data.data || [])
+      if (fwdRes.status === 'fulfilled') setForwarders(fwdRes.value.data.data || [])
     } catch (err) {
       console.error(err)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const createMailbox = async () => {
+  const openModal = (type: 'mailbox' | 'alias' | 'forwarder') => {
+    setModalType(type)
+    setFormError('')
+    setFormData({ email: '', password: '', quota: 10737418240, display_name: '', domain: '', source: '', destination: '', forward_to: '' })
+    setShowModal(true)
+  }
+
+  const handleCreate = async () => {
+    setSaving(true)
+    setFormError('')
     try {
-      await api.post('/email/mailboxes', {
-        email: formData.email,
-        password: formData.password,
-        quota: formData.quota,
-        display_name: formData.display_name,
-      })
-      setShowCreateModal(false)
+      if (modalType === 'mailbox') {
+        await api.post('/email/mailboxes', {
+          email: formData.email,
+          password: formData.password,
+          quota: formData.quota,
+          display_name: formData.display_name,
+        })
+      } else if (modalType === 'alias') {
+        await api.post('/email/aliases', {
+          domain: formData.domain,
+          source: formData.source,
+          destination: formData.destination,
+        })
+      } else {
+        await api.post('/email/forwarders', {
+          domain: formData.domain,
+          source: formData.source,
+          destination: formData.destination,
+        })
+      }
+      setShowModal(false)
       loadData()
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      setFormError(err.response?.data?.error?.user_message || 'Failed to create')
+    } finally {
+      setSaving(false)
     }
   }
 
-  const createAlias = async () => {
+  const handleDelete = async (type: string, id: number) => {
+    if (!confirm('Delete this item?')) return
     try {
-      await api.post('/email/aliases', {
-        domain: formData.domain,
-        source: formData.source,
-        destination: formData.destination,
-      })
-      setShowCreateModal(false)
-      loadData()
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const createForwarder = async () => {
-    try {
-      await api.post('/email/forwarders', {
-        domain: formData.domain,
-        source: formData.source,
-        destination: formData.destination,
-      })
-      setShowCreateModal(false)
-      loadData()
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const deleteMailbox = async (id: number) => {
-    if (!confirm('Delete this mailbox?')) return
-    try {
-      await api.delete(`/email/mailboxes/${id}`)
-      loadData()
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const deleteAlias = async (id: number) => {
-    if (!confirm('Delete this alias?')) return
-    try {
-      await api.delete(`/email/aliases/${id}`)
-      loadData()
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const deleteForwarder = async (id: number) => {
-    if (!confirm('Delete this forwarder?')) return
-    try {
-      await api.delete(`/email/forwarders/${id}`)
+      if (type === 'mailbox') await api.delete(`/email/mailboxes/${id}`)
+      else if (type === 'alias') await api.delete(`/email/aliases/${id}`)
+      else await api.delete(`/email/forwarders/${id}`)
       loadData()
     } catch (err) {
       console.error(err)
@@ -158,394 +157,300 @@ export default function EmailDashboard() {
     }
   }
 
-  const openCreateModal = (type: 'mailbox' | 'alias' | 'forwarder') => {
-    setCreateType(type)
-    setFormData({ email: '', password: '', quota: 10737418240, display_name: '', domain: '', source: '', destination: '', forward_to: '' })
-    setShowCreateModal(true)
-  }
-
-  const formatSize = (bytes: number) => {
-    if (bytes === 0) return '0 B'
-    const k = 1024
-    const sizes = ['B', 'KB', 'MB', 'GB']
-    const i = Math.floor(Math.log(bytes) / Math.log(k))
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
-  }
-
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-lg font-semibold">Email</h1>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Email"
+        description="Manage mailboxes, aliases, and email delivery"
+        breadcrumbs={[{ label: 'Email' }]}
+      />
 
-      <div className="flex border-b border-border mb-6">
-        <button
-          onClick={() => setActiveTab('mailboxes')}
-          className={`px-4 py-2 text-sm font-medium ${activeTab === 'mailboxes' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
-        >
-          Mailboxes
-        </button>
-        <button
-          onClick={() => setActiveTab('aliases')}
-          className={`px-4 py-2 text-sm font-medium ${activeTab === 'aliases' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
-        >
-          Aliases
-        </button>
-        <button
-          onClick={() => setActiveTab('forwarders')}
-          className={`px-4 py-2 text-sm font-medium ${activeTab === 'forwarders' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
-        >
-          Forwarders
-        </button>
-        <button
-          onClick={() => setActiveTab('catchall')}
-          className={`px-4 py-2 text-sm font-medium ${activeTab === 'catchall' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
-        >
-          Catch-All
-        </button>
-        <button
-          onClick={() => setActiveTab('deliverability')}
-          className={`px-4 py-2 text-sm font-medium ${activeTab === 'deliverability' ? 'border-b-2 border-primary' : 'text-muted-foreground'}`}
-        >
-          Deliverability
-        </button>
-      </div>
+      <Tabs tabs={tabs} activeTab={activeTab} onChange={setActiveTab} />
 
       {activeTab === 'mailboxes' && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-muted-foreground">
-              Mailbox · An email account that stores messages on your server
-            </p>
-            <button
-              onClick={() => openCreateModal('mailbox')}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90"
-            >
-              <Plus size={16} />
+        <Card padding="none">
+          <div className="p-4 flex items-center justify-between border-b border-border">
+            <p className="text-sm text-text-secondary">Mailbox · An email account that stores messages on your server</p>
+            <Button onClick={() => openModal('mailbox')}>
+              <Plus className="w-4 h-4 mr-2" />
               Create Mailbox
-            </button>
+            </Button>
           </div>
-
-          <div className="border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left p-3 font-medium">Email</th>
-                  <th className="text-left p-3 font-medium">Display Name</th>
-                  <th className="text-left p-3 font-medium">Quota</th>
-                  <th className="text-left p-3 font-medium">Forward To</th>
-                  <th className="text-left p-3 font-medium">Status</th>
-                  <th className="text-left p-3 font-medium">Actions</th>
+          <table className="w-full">
+            <thead className="bg-accent/50">
+              <tr>
+                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Email</th>
+                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Display Name</th>
+                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Quota</th>
+                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Status</th>
+                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {mailboxes.map((m) => (
+                <tr key={m.id} className="hover:bg-accent/30 transition-colors">
+                  <td className="p-3">
+                    <div className="flex items-center gap-2">
+                      <Mail className="w-4 h-4 text-text-secondary" />
+                      <span className="font-medium">{m.email}</span>
+                    </div>
+                  </td>
+                  <td className="p-3 text-text-secondary">{m.display_name || '—'}</td>
+                  <td className="p-3 text-text-secondary">{formatBytes(m.quota)}</td>
+                  <td className="p-3"><StatusBadge status={m.status} /></td>
+                  <td className="p-3">
+                    <button onClick={() => handleDelete('mailbox', m.id)} className="text-xs text-danger hover:underline">Delete</button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {mailboxes.map((m) => (
-                  <tr key={m.id} className="border-b border-border">
-                    <td className="p-3">{m.email}</td>
-                    <td className="p-3 text-muted-foreground">{m.display_name || '—'}</td>
-                    <td className="p-3 text-muted-foreground">{formatSize(m.quota)}</td>
-                    <td className="p-3 text-muted-foreground">{m.forward_to || '—'}</td>
-                    <td className="p-3">
-                      <span className={`text-xs px-2 py-1 rounded ${m.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
-                        {m.status}
-                      </span>
-                    </td>
-                    <td className="p-3">
-                      <button onClick={() => deleteMailbox(m.id)} className="text-red-600 hover:underline text-xs">
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {mailboxes.length === 0 && (
-                  <tr>
-                    <td colSpan={6} className="p-8 text-center text-muted-foreground">No mailboxes</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              ))}
+              {mailboxes.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="p-8 text-center text-text-secondary text-sm">No mailboxes</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </Card>
       )}
 
       {activeTab === 'aliases' && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-muted-foreground">
-              Alias · Redirects emails from one address to another on the same domain
-            </p>
-            <button
-              onClick={() => openCreateModal('alias')}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90"
-            >
-              <Plus size={16} />
+        <Card padding="none">
+          <div className="p-4 flex items-center justify-between border-b border-border">
+            <p className="text-sm text-text-secondary">Alias · Redirects emails from one address to another on the same domain</p>
+            <Button onClick={() => openModal('alias')}>
+              <Plus className="w-4 h-4 mr-2" />
               Create Alias
-            </button>
+            </Button>
           </div>
-
-          <div className="border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left p-3 font-medium">Source</th>
-                  <th className="text-left p-3 font-medium">Destination</th>
-                  <th className="text-left p-3 font-medium">Actions</th>
+          <table className="w-full">
+            <thead className="bg-accent/50">
+              <tr>
+                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Source</th>
+                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Destination</th>
+                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {aliases.map((a) => (
+                <tr key={a.id} className="hover:bg-accent/30 transition-colors">
+                  <td className="p-3 font-mono text-sm">{a.source}@{a.domain}</td>
+                  <td className="p-3 text-text-secondary">{a.destination}</td>
+                  <td className="p-3">
+                    <button onClick={() => handleDelete('alias', a.id)} className="text-xs text-danger hover:underline">Delete</button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {aliases.map((a) => (
-                  <tr key={a.id} className="border-b border-border">
-                    <td className="p-3">{a.source}@{a.domain}</td>
-                    <td className="p-3 text-muted-foreground">{a.destination}</td>
-                    <td className="p-3">
-                      <button onClick={() => deleteAlias(a.id)} className="text-red-600 hover:underline text-xs">
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {aliases.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="p-8 text-center text-muted-foreground">No aliases</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              ))}
+              {aliases.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="p-8 text-center text-text-secondary text-sm">No aliases</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </Card>
       )}
 
       {activeTab === 'forwarders' && (
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-muted-foreground">
-              Forwarder · Sends copies of emails to external addresses
-            </p>
-            <button
-              onClick={() => openCreateModal('forwarder')}
-              className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90"
-            >
-              <Plus size={16} />
+        <Card padding="none">
+          <div className="p-4 flex items-center justify-between border-b border-border">
+            <p className="text-sm text-text-secondary">Forwarder · Sends copies of emails to external addresses</p>
+            <Button onClick={() => openModal('forwarder')}>
+              <Plus className="w-4 h-4 mr-2" />
               Create Forwarder
-            </button>
+            </Button>
           </div>
-
-          <div className="border border-border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 border-b border-border">
-                <tr>
-                  <th className="text-left p-3 font-medium">Source</th>
-                  <th className="text-left p-3 font-medium">Destination</th>
-                  <th className="text-left p-3 font-medium">Actions</th>
+          <table className="w-full">
+            <thead className="bg-accent/50">
+              <tr>
+                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Source</th>
+                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Destination</th>
+                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {forwarders.map((f) => (
+                <tr key={f.id} className="hover:bg-accent/30 transition-colors">
+                  <td className="p-3 font-mono text-sm">{f.source}@{f.domain}</td>
+                  <td className="p-3 text-text-secondary">{f.destination}</td>
+                  <td className="p-3">
+                    <button onClick={() => handleDelete('forwarder', f.id)} className="text-xs text-danger hover:underline">Delete</button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {forwarders.map((f) => (
-                  <tr key={f.id} className="border-b border-border">
-                    <td className="p-3">{f.source}@{f.domain}</td>
-                    <td className="p-3 text-muted-foreground">{f.destination}</td>
-                    <td className="p-3">
-                      <button onClick={() => deleteForwarder(f.id)} className="text-red-600 hover:underline text-xs">
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {forwarders.length === 0 && (
-                  <tr>
-                    <td colSpan={3} className="p-8 text-center text-muted-foreground">No forwarders</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+              ))}
+              {forwarders.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="p-8 text-center text-text-secondary text-sm">No forwarders</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </Card>
       )}
 
       {activeTab === 'catchall' && (
-        <div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Catch-All · Receives email sent to any address at your domain that doesn't exist
-          </p>
-
-          <div className="border border-border p-4">
-            <p className="text-sm text-muted-foreground mb-2">Set a catch-all address for your domain:</p>
-            <div className="flex gap-2">
-              <input
-                type="text"
-                placeholder="domain.com"
-                className="border border-border px-3 py-2 text-sm w-64"
-                value={deliverabilityDomain}
-                onChange={(e) => setDeliverabilityDomain(e.target.value)}
-              />
-              <input
-                type="text"
-                placeholder="forward@example.com"
-                className="border border-border px-3 py-2 text-sm flex-1"
-                value={formData.forward_to}
-                onChange={(e) => setFormData({ ...formData, forward_to: e.target.value })}
-              />
-              <button className="bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90">
-                Set Catch-All
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'deliverability' && (
-        <div>
-          <p className="text-sm text-muted-foreground mb-4">
-            Deliverability · Check if your domain can receive emails from major providers
-          </p>
-
-          <div className="flex gap-2 mb-6">
+        <Card>
+          <CardHeader>
+            <CardTitle>Catch-All Address</CardTitle>
+            <CardDescription>Catch-All · Receives email sent to any address at your domain that doesn't exist</CardDescription>
+          </CardHeader>
+          <div className="flex gap-3">
             <input
               type="text"
               placeholder="yourdomain.com"
-              className="border border-border px-3 py-2 text-sm w-64"
+              className="flex-1 h-10 px-3 bg-background border border-border rounded text-sm"
               value={deliverabilityDomain}
-              onChange={(e) => setDeliverabilityDomain(e.target.value)}
+              onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
             />
-            <button
-              onClick={checkDeliverability}
-              className="bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90"
-            >
-              Check
-            </button>
+            <input
+              type="text"
+              placeholder="catchall@external.com"
+              className="flex-1 h-10 px-3 bg-background border border-border rounded text-sm"
+              value={formData.forward_to}
+              onChange={(e) => setFormData({ ...formData, forward_to: e.target.value })}
+            />
+            <Button>Set Catch-All</Button>
           </div>
+        </Card>
+      )}
+
+      {activeTab === 'deliverability' && (
+        <div className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle>Email Deliverability Check</CardTitle>
+              <CardDescription>Check if your domain can receive emails from major providers</CardDescription>
+            </CardHeader>
+            <div className="flex gap-3">
+              <Input
+                type="text"
+                placeholder="yourdomain.com"
+                value={deliverabilityDomain}
+                onChange={(e) => setDeliverabilityDomain(e.target.value)}
+                className="flex-1"
+              />
+              <Button onClick={checkDeliverability}>Check</Button>
+            </div>
+          </Card>
 
           {deliverabilityResult && (
             <div className="grid grid-cols-2 gap-4">
-              <DeliverabilityCard title="SPF" result={deliverabilityResult.spf} />
-              <DeliverabilityCard title="DKIM" result={deliverabilityResult.dkim} />
-              <DeliverabilityCard title="DMARC" result={deliverabilityResult.dmarc} />
-              <DeliverabilityCard title="PTR" result={deliverabilityResult.ptr} />
+              {[
+                { title: 'SPF', result: deliverabilityResult.spf },
+                { title: 'DKIM', result: deliverabilityResult.dkim },
+                { title: 'DMARC', result: deliverabilityResult.dmarc },
+                { title: 'PTR', result: deliverabilityResult.ptr },
+              ].map(({ title, result }) => (
+                <Card key={title}>
+                  <div className="flex items-center gap-3 mb-3">
+                    {result.status ? (
+                      <CheckCircle className="w-5 h-5 text-success" />
+                    ) : (
+                      <XCircle className="w-5 h-5 text-danger" />
+                    )}
+                    <span className="font-semibold">{title}</span>
+                  </div>
+                  <p className="text-sm text-text-secondary mb-2">{result.message}</p>
+                  {'record' in result && result.record && (
+                    <div className="flex items-center gap-2">
+                      <code className="flex-1 text-xs bg-accent/50 p-2 rounded font-mono">{result.record}</code>
+                      <CopyButton text={result.record} />
+                    </div>
+                  )}
+                </Card>
+              ))}
             </div>
           )}
         </div>
       )}
 
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card border border-border p-6 w-96">
-            <h3 className="font-medium mb-4">
-              Create {createType === 'mailbox' ? 'Mailbox' : createType === 'alias' ? 'Alias' : 'Forwarder'}
-            </h3>
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        title={modalType === 'mailbox' ? 'Create Mailbox' : modalType === 'alias' ? 'Create Alias' : 'Create Forwarder'}
+        size="sm"
+      >
+        <div className="space-y-4">
+          {formError && (
+            <div className="p-3 bg-danger/10 border border-danger/20 rounded text-sm text-danger">{formError}</div>
+          )}
 
-            {createType === 'mailbox' && (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm mb-1">Email Address</label>
-                  <input
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                    className="w-full border border-border px-3 py-2 text-sm"
-                    placeholder="user@domain.com"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Password</label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full border border-border px-3 py-2 text-sm"
-                    placeholder="Min 8 characters"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Display Name</label>
-                  <input
-                    type="text"
-                    value={formData.display_name}
-                    onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
-                    className="w-full border border-border px-3 py-2 text-sm"
-                    placeholder="John Doe"
-                  />
-                </div>
-                <button
-                  onClick={createMailbox}
-                  className="w-full bg-primary text-primary-foreground py-2 text-sm font-medium hover:opacity-90"
-                >
-                  Create Mailbox
-                </button>
-              </div>
-            )}
+          {modalType === 'mailbox' && (
+            <>
+              <FormGroup>
+                <Label>Email Address</Label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="user@domain.com"
+                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Password</Label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Display Name</Label>
+                <input
+                  type="text"
+                  value={formData.display_name}
+                  onChange={(e) => setFormData({ ...formData, display_name: e.target.value })}
+                  placeholder="John Doe"
+                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </FormGroup>
+            </>
+          )}
 
-            {(createType === 'alias' || createType === 'forwarder') && (
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-sm mb-1">Domain</label>
-                  <input
-                    type="text"
-                    value={formData.domain}
-                    onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-                    className="w-full border border-border px-3 py-2 text-sm"
-                    placeholder="domain.com"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Source (local part)</label>
-                  <input
-                    type="text"
-                    value={formData.source}
-                    onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                    className="w-full border border-border px-3 py-2 text-sm"
-                    placeholder="info"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm mb-1">Destination</label>
-                  <input
-                    type="text"
-                    value={formData.destination}
-                    onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
-                    className="w-full border border-border px-3 py-2 text-sm"
-                    placeholder={createType === 'forwarder' ? 'external@example.com' : 'user@domain.com'}
-                  />
-                </div>
-                <button
-                  onClick={createType === 'alias' ? createAlias : createForwarder}
-                  className="w-full bg-primary text-primary-foreground py-2 text-sm font-medium hover:opacity-90"
-                >
-                  Create {createType === 'alias' ? 'Alias' : 'Forwarder'}
-                </button>
-              </div>
-            )}
+          {(modalType === 'alias' || modalType === 'forwarder') && (
+            <>
+              <FormGroup>
+                <Label>Domain</Label>
+                <input
+                  type="text"
+                  value={formData.domain}
+                  onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+                  placeholder="domain.com"
+                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Source (local part)</Label>
+                <input
+                  type="text"
+                  value={formData.source}
+                  onChange={(e) => setFormData({ ...formData, source: e.target.value })}
+                  placeholder="info"
+                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Destination</Label>
+                <input
+                  type="text"
+                  value={formData.destination}
+                  onChange={(e) => setFormData({ ...formData, destination: e.target.value })}
+                  placeholder={modalType === 'forwarder' ? 'external@example.com' : 'user@domain.com'}
+                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </FormGroup>
+            </>
+          )}
 
-            <button
-              onClick={() => setShowCreateModal(false)}
-              className="mt-3 w-full border border-border py-2 text-sm hover:bg-muted"
-            >
-              Cancel
-            </button>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
+            <Button onClick={handleCreate} loading={saving}>
+              Create {modalType === 'mailbox' ? 'Mailbox' : modalType === 'alias' ? 'Alias' : 'Forwarder'}
+            </Button>
           </div>
         </div>
-      )}
-    </div>
-  )
-}
-
-function DeliverabilityCard({ title, result }: { title: string; result: any }) {
-  const StatusIcon = result.status ? CheckCircle : XCircle
-  const statusColor = result.status ? 'text-green-600' : 'text-red-600'
-
-  return (
-    <div className="border border-border p-4">
-      <div className="flex items-center gap-2 mb-2">
-        <StatusIcon size={18} className={statusColor} />
-        <span className="font-medium">{title}</span>
-        <span className="text-sm text-muted-foreground">·</span>
-        <span className="text-sm text-muted-foreground">{result.message}</span>
-      </div>
-      {result.record && (
-        <p className="text-xs font-mono bg-muted p-2 mb-2">{result.record}</p>
-      )}
-      {result.recommendation && (
-        <p className="text-xs text-muted-foreground">{result.recommendation}</p>
-      )}
+      </Modal>
     </div>
   )
 }

@@ -1,188 +1,180 @@
-import { useEffect, useRef, useState } from 'react'
-import { Terminal } from '@xterm/xterm'
-import { FitAddon } from '@xterm/addon-fit'
-import { Link } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Terminal as TerminalIcon, Plus, AlertTriangle } from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardDescription } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { Badge } from '../../components/ui/Badge'
+import { PageHeader } from '../../components/ui/Misc'
 import api from '../../lib/api'
-import { WSClient } from '../../lib/ws'
-import { ArrowLeft, Copy, Check } from 'lucide-react'
-import '@xterm/xterm/css/xterm.css'
+import { cn } from '../../lib/utils'
 
-export default function TerminalPage() {
-  const terminalRef = useRef<HTMLDivElement>(null)
-  const termRef = useRef<Terminal | null>(null)
-  const fitAddonRef = useRef<FitAddon | null>(null)
-  const wsRef = useRef<WSClient | null>(null)
-  const [sessionId, setSessionId] = useState<string | null>(null)
-  const [connected, setConnected] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [sessionInfo, setSessionInfo] = useState({ started_at: new Date().toISOString() })
+interface TerminalSession {
+  id: string
+  name: string
+  type: 'root' | 'site'
+  site_name?: string
+  created_at: string
+  status: 'active' | 'closed'
+}
+
+export default function Terminal() {
+  const [sessions, setSessions] = useState<TerminalSession[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeSession, setActiveSession] = useState<string | null>(null)
+  const [showRootWarning, setShowRootWarning] = useState(false)
 
   useEffect(() => {
-    if (!terminalRef.current) return
-
-    const term = new Terminal({
-      cursorBlink: true,
-      fontSize: 14,
-      fontFamily: 'Menlo, Monaco, "Courier New", monospace',
-      theme: {
-        background: '#0a0a0a',
-        foreground: '#e5e5e5',
-        cursor: '#e5e5e5',
-      },
-      scrollback: 10000,
-    })
-    termRef.current = term
-
-    const fitAddon = new FitAddon()
-    fitAddonRef.current = fitAddon
-    term.loadAddon(fitAddon)
-    term.open(terminalRef.current)
-    fitAddon.fit()
-
-    term.writeln('\x1b[1;32mJuvia Terminal\x1b[0m')
-    term.writeln('Connecting to server...\r\n')
-
-    createSession(term)
-
-    const handleResize = () => {
-      if (fitAddonRef.current) {
-        fitAddonRef.current.fit()
-        const { rows, cols } = term
-        if (wsRef.current) {
-          wsRef.current.send({ type: 'resize', data: { rows, cols } })
-        }
-      }
-    }
-
-    window.addEventListener('resize', handleResize)
-
-    const resizeObserver = new ResizeObserver(handleResize)
-    resizeObserver.observe(terminalRef.current)
-
-    return () => {
-      window.removeEventListener('resize', handleResize)
-      resizeObserver.disconnect()
-      if (wsRef.current) {
-        wsRef.current.close()
-      }
-      if (sessionId) {
-        api.delete(`/terminal/sessions/${sessionId}`).catch(() => {})
-      }
-      term.dispose()
-    }
+    loadSessions()
   }, [])
 
-  const createSession = async (term: Terminal) => {
+  const loadSessions = async () => {
     try {
-      const res = await api.post('/terminal/session', {})
-      const data = res.data
-      if (!data.success) {
-        term.writeln('\x1b[31mFailed to create session\x1b[0m')
-        return
-      }
-
-      const sid = data.data.session_id
-      setSessionId(sid)
-      setSessionInfo({ started_at: new Date().toISOString() })
-
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const host = window.location.host
-      const ws = new WSClient(`${protocol}//${host}/ws/v1/terminal/${sid}`)
-      wsRef.current = ws
-
-      ws.on('output', (outputData: unknown) => {
-        const output = (outputData as { data: string }).data
-        term.write(output)
-      })
-
-      ws.on('connect', () => {
-        setConnected(true)
-        term.writeln('\x1b[32mConnected\x1b[0m — type commands below\r\n')
-        const { rows, cols } = term
-        ws.send({ type: 'resize', data: { rows, cols } })
-      })
-
-      ws.on('close', () => {
-        setConnected(false)
-        term.writeln('\r\n\x1b[33mSession closed\x1b[0m')
-      })
-
-      term.onData((data) => {
-        ws.send({ type: 'input', data: { data } })
-      })
-
-      ws.connect()
+      const res = await api.get('/terminal/sessions')
+      setSessions(res.data.data || [])
     } catch (err) {
-      term.writeln(`\x1b[31mError: ${err}\x1b[0m`)
+      console.error(err)
+    } finally {
+      setLoading(false)
     }
   }
 
-  const copySessionLink = () => {
-    if (sessionId) {
-      navigator.clipboard.writeText(sessionId)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+  const createSession = async (type: 'root' | 'site', siteId?: string) => {
+    if (type === 'root') {
+      setShowRootWarning(true)
+      return
+    }
+    try {
+      const res = await api.post('/terminal/session', { type, website_id: siteId })
+      if (res.data.success) {
+        setActiveSession(res.data.data.id)
+        loadSessions()
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const closeSession = async (id: string) => {
+    try {
+      await api.delete(`/terminal/sessions/${id}`)
+      if (activeSession === id) setActiveSession(null)
+      loadSessions()
+    } catch (err) {
+      console.error(err)
     }
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <Link
-            to="/terminal/recordings"
-            className="p-2 hover:bg-accent rounded-lg transition-colors"
-          >
-            <ArrowLeft size={16} />
-          </Link>
-          <div>
-            <h1 className="text-lg font-semibold">Terminal Session</h1>
-            <p className="text-xs text-muted-foreground">
-              Session ID: {sessionId || '—'}
-              {sessionId && (
-                <button
-                  onClick={copySessionLink}
-                  className="ml-2 inline-flex items-center gap-1 text-primary hover:underline"
-                >
-                  {copied ? <Check size={12} /> : <Copy size={12} />}
-                  {copied ? 'Copied' : 'Copy'}
-                </button>
-              )}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center gap-4">
+    <div className="space-y-6">
+      <PageHeader
+        title="Terminal"
+        description="Interactive server terminal access"
+        breadcrumbs={[{ label: 'Terminal' }]}
+        actions={
           <div className="flex items-center gap-2">
-            <div
-              className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500' : 'bg-yellow-500'}`}
-            />
-            <span className="text-sm text-muted-foreground">
-              {connected ? 'Connected' : 'Connecting...'}
-            </span>
+            <Button variant="outline" onClick={() => createSession('site')}>
+              <Plus className="w-4 h-4 mr-2" />
+              New Site Terminal
+            </Button>
+            <Button variant="outline" onClick={() => createSession('root')}>
+              <AlertTriangle className="w-4 h-4 mr-2" />
+              New Root Terminal
+            </Button>
           </div>
-          <Link
-            to="/terminal/recordings"
-            className="text-sm text-muted-foreground hover:text-foreground"
-          >
-            View Recordings
-          </Link>
-        </div>
-      </div>
-
-      <div
-        ref={terminalRef}
-        className="flex-1 border rounded-lg overflow-hidden bg-black"
-        style={{ minHeight: '400px' }}
+        }
       />
 
-      <div className="mt-2 text-xs text-muted-foreground flex items-center gap-4">
-        <span>
-          Started: {new Date(sessionInfo.started_at).toLocaleTimeString()}
-        </span>
-        <span className="text-muted-foreground/50">
-          Sessions are recorded for security purposes
-        </span>
-      </div>
+      {showRootWarning && (
+        <Card className="border-warning/50 bg-warning/5">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-warning flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <h3 className="font-semibold text-warning mb-1">Root Terminal Warning</h3>
+              <p className="text-sm text-text-secondary mb-3">
+                You are about to open a root terminal. All actions are logged and cannot be undone.
+                Root access should only be used for system administration tasks.
+              </p>
+              <div className="flex gap-2">
+                <Button onClick={() => { setShowRootWarning(false); createSession('root') }}>
+                  Continue as Root
+                </Button>
+                <Button variant="outline" onClick={() => setShowRootWarning(false)}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      <Card padding="none">
+        <div className="p-4 flex items-center justify-between border-b border-border">
+          <div className="flex items-center gap-3">
+            <TerminalIcon className="w-5 h-5 text-text-secondary" />
+            <div>
+              <p className="font-medium">{sessions.filter(s => s.status === 'active').length} active sessions</p>
+              <p className="text-xs text-text-secondary">All sessions are recorded</p>
+            </div>
+          </div>
+        </div>
+        <div className="divide-y divide-border">
+          {sessions.length === 0 ? (
+            <div className="p-8 text-center">
+              <TerminalIcon className="w-12 h-12 mx-auto text-text-secondary/50 mb-3" />
+              <p className="text-text-secondary text-sm mb-3">No active terminal sessions</p>
+              <p className="text-xs text-text-secondary">
+                Sessions are isolated per website user or root
+              </p>
+            </div>
+          ) : (
+            sessions.map((session) => (
+              <div
+                key={session.id}
+                className="flex items-center justify-between p-4 hover:bg-accent/30 transition-colors"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={cn('w-8 h-8 rounded flex items-center justify-center',
+                    session.type === 'root' ? 'bg-danger/10' : 'bg-primary/10')}>
+                    <TerminalIcon className={cn('w-4 h-4',
+                      session.type === 'root' ? 'text-danger' : 'text-primary')} />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <p className="font-medium text-sm">{session.name}</p>
+                      {session.type === 'root' && (
+                        <Badge variant="danger">ROOT</Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-text-secondary mt-0.5">
+                      {session.site_name || session.type} · {session.created_at}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant={session.status === 'active' ? 'success' : 'neutral'}>
+                    {session.status}
+                  </Badge>
+                  {session.status === 'active' ? (
+                    <Button size="sm" variant="outline">Connect</Button>
+                  ) : (
+                    <Button size="sm" variant="outline" onClick={() => closeSession(session.id)}>
+                      Delete
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardDescription>
+            Terminal sessions are recorded in asciinema format for security and audit purposes.
+            Sessions automatically terminate after 15 minutes of inactivity.
+          </CardDescription>
+        </CardHeader>
+      </Card>
     </div>
   )
 }

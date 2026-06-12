@@ -1,105 +1,182 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, Link } from 'react-router-dom'
+import { ArrowLeft, Database, Check } from 'lucide-react'
+import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { PageHeader } from '../../components/ui/Misc'
 import api from '../../lib/api'
+import { cn } from '../../lib/utils'
 
 export default function CreateDatabase() {
   const navigate = useNavigate()
-  const [name, setName] = useState('')
-  const [engine, setEngine] = useState<'mysql' | 'postgresql'>('mysql')
-  const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [formData, setFormData] = useState({
+    name: '',
+    engine: 'mysql',
+    create_user: true,
+    username: '',
+    password: '',
+    grant_all: true,
+  })
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-
-    if (!name.match(/^[a-zA-Z0-9_]{1,64}$/)) {
-      setError('Name must be alphanumeric or underscore, max 64 characters')
+  const handleSubmit = async () => {
+    if (!formData.name) {
+      setError('Database name is required')
       return
     }
 
     setLoading(true)
+    setError('')
+
     try {
-      await api.post('/databases', { name, engine })
-      navigate('/databases')
+      const res = await api.post('/databases', {
+        name: formData.name,
+        engine: formData.engine,
+        create_user: formData.create_user,
+        username: formData.create_user ? formData.username : undefined,
+        password: formData.create_user ? formData.password : undefined,
+        grant_all: formData.grant_all,
+      })
+
+      if (res.data.success) {
+        navigate('/databases')
+      }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create database')
+      setError(err.response?.data?.error?.user_message || 'Failed to create database')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="p-6 max-w-md">
-      <h1 className="text-lg font-semibold mb-6">Create Database</h1>
-
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <div>
-          <label className="block text-sm font-medium mb-1">Database Name</label>
-          <input
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="w-full border border-border px-3 py-2 text-sm"
-            placeholder="my_database"
-            pattern="^[a-zA-Z0-9_]{1,64}$"
-            required
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            Letters, numbers, and underscores only. Max 64 characters.
-          </p>
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium mb-2">Database Type</label>
-          <div className="flex gap-4">
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="engine"
-                value="mysql"
-                checked={engine === 'mysql'}
-                onChange={() => setEngine('mysql')}
-                className="cursor-pointer"
-              />
-              <span className="text-sm">MySQL</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer">
-              <input
-                type="radio"
-                name="engine"
-                value="postgresql"
-                checked={engine === 'postgresql'}
-                onChange={() => setEngine('postgresql')}
-                className="cursor-pointer"
-              />
-              <span className="text-sm">PostgreSQL</span>
-            </label>
-          </div>
-          <p className="text-xs text-muted-foreground mt-1">
-            MySQL · Most popular database for web applications. PostgreSQL · Advanced database with more features.
-          </p>
-        </div>
-
-        {error && <div className="text-red-600 text-sm">{error}</div>}
-
-        <div className="flex gap-2 pt-2">
-          <button
-            type="submit"
-            disabled={loading}
-            className="bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90 disabled:opacity-50"
+    <div className="max-w-xl mx-auto space-y-6">
+      <PageHeader
+        title="Create Database"
+        description="Add a new MySQL or PostgreSQL database"
+        breadcrumbs={[
+          { label: 'Databases', href: '/databases' },
+          { label: 'Create' },
+        ]}
+        actions={
+          <Link
+            to="/databases"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-border text-sm rounded hover:bg-accent transition-colors"
           >
-            {loading ? 'Creating...' : 'Create Database'}
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/databases')}
-            className="border border-border px-4 py-2 text-sm hover:bg-muted"
-          >
+            <ArrowLeft className="w-4 h-4" />
             Cancel
-          </button>
+          </Link>
+        }
+      />
+
+      {error && (
+        <div className="p-4 bg-danger/10 border border-danger/20 rounded text-sm text-danger">
+          {error}
         </div>
-      </form>
+      )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Database Details</CardTitle>
+        </CardHeader>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Database Name</label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value.replace(/\s/g, '_').toLowerCase() })}
+              placeholder="my_database"
+              className="w-full h-10 px-3 bg-background border border-border rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
+            <p className="text-xs text-text-secondary mt-1">Only letters, numbers, and underscores allowed</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-3">Database Engine</label>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { id: 'mysql', label: 'MySQL 8.0', desc: 'Most popular for web applications' },
+                { id: 'postgresql', label: 'PostgreSQL 15', desc: 'Advanced features and performance' },
+              ].map((engine) => (
+                <button
+                  key={engine.id}
+                  onClick={() => setFormData({ ...formData, engine: engine.id })}
+                  className={cn(
+                    'p-4 border rounded text-left transition-colors',
+                    formData.engine === engine.id
+                      ? 'border-primary bg-primary/10'
+                      : 'border-border hover:border-primary/50'
+                  )}
+                >
+                  <p className="font-medium">{engine.label}</p>
+                  <p className="text-xs text-text-secondary mt-0.5">{engine.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Database User</CardTitle>
+        </CardHeader>
+        <div className="space-y-4">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={formData.create_user}
+              onChange={(e) => setFormData({ ...formData, create_user: e.target.checked })}
+              className="w-4 h-4 rounded border-border"
+            />
+            <span className="text-sm">Create a dedicated user for this database</span>
+          </label>
+
+          {formData.create_user && (
+            <div className="space-y-3 pl-7">
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Username</label>
+                <input
+                  type="text"
+                  value={formData.username}
+                  onChange={(e) => setFormData({ ...formData, username: e.target.value.replace(/\s/g, '_').toLowerCase() })}
+                  placeholder="db_user"
+                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1.5">Password</label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Strong password"
+                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </div>
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.grant_all}
+                  onChange={(e) => setFormData({ ...formData, grant_all: e.target.checked })}
+                  className="w-4 h-4 rounded border-border"
+                />
+                <span className="text-sm">Grant all privileges to this user</span>
+              </label>
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Button
+        onClick={handleSubmit}
+        loading={loading}
+        disabled={!formData.name || (formData.create_user && !formData.username)}
+        className="w-full"
+      >
+        Create Database
+      </Button>
     </div>
   )
 }

@@ -1,48 +1,42 @@
 import { useEffect, useState } from 'react'
-import { Clock, Plus, X } from 'lucide-react'
+import { Clock, Plus, Trash2, Play, Pause, RefreshCw, CheckCircle, XCircle, Terminal } from 'lucide-react'
+import { Card, CardHeader, CardTitle, CardDescription } from '../../components/ui/Card'
+import { Button } from '../../components/ui/Button'
+import { Badge } from '../../components/ui/Badge'
+import { Table } from '../../components/ui/Table'
+import { PageHeader } from '../../components/ui/Misc'
+import { Modal } from '../../components/ui/Modal'
+import { Input, Label, Select, FormGroup } from '../../components/ui/Input'
 import api from '../../lib/api'
+import { formatDate, timeAgo } from '../../lib/utils'
+import { cn } from '../../lib/utils'
 
 interface CronJob {
   id: number
-  schedule: string
+  name: string
   command: string
-  run_as: string
-  type: string
-  enabled: boolean
-  last_run: string
-  last_status: string
-  last_output: string
-  created_at: string
-}
-
-interface CronJobLog {
-  id: number
-  cron_job_id: number
-  run_at: string
-  duration_ms: number
-  status: string
-  output: string
+  schedule: string
+  type: 'shell' | 'url' | 'php'
+  status: 'active' | 'paused'
+  last_run: string | null
+  last_status: 'success' | 'failed' | null
+  next_run: string
 }
 
 export default function CronJobs() {
   const [jobs, setJobs] = useState<CronJob[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [showLogs, setShowLogs] = useState<CronJob | null>(null)
-  const [logs, setLogs] = useState<CronJobLog[]>([])
   const [formData, setFormData] = useState({
-    schedule: '0 3 * * *',
-    command: '',
-    run_as: 'root',
-    type: 'shell',
+    name: '', command: '', schedule: '0 * * * *', type: 'shell', frequency: 'hourly',
   })
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     loadJobs()
   }, [])
 
   const loadJobs = async () => {
-    setLoading(true)
     try {
       const res = await api.get('/cron')
       setJobs(res.data.data || [])
@@ -53,230 +47,216 @@ export default function CronJobs() {
     }
   }
 
-  const createJob = async () => {
+  const handleCreate = async () => {
+    if (!formData.name || !formData.command) return
+    setSaving(true)
     try {
-      await api.post('/cron', formData)
+      await api.post('/cron', {
+        name: formData.name,
+        command: formData.command,
+        schedule: formData.schedule,
+        type: formData.type,
+      })
       setShowModal(false)
-      setFormData({ schedule: '0 3 * * *', command: '', run_as: 'root', type: 'shell' })
+      setFormData({ name: '', command: '', schedule: '0 * * * *', type: 'shell', frequency: 'hourly' })
       loadJobs()
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      alert(err.response?.data?.error?.user_message || 'Failed to create job')
+    } finally {
+      setSaving(false)
     }
   }
 
-  const deleteJob = async (id: number) => {
+  const handleToggle = async (id: number, enabled: boolean) => {
+    const action = enabled ? 'disable' : 'enable'
+    try {
+      await api.post(`/cron/${id}/${action}`)
+      loadJobs()
+    } catch (err: any) {
+      alert(err.response?.data?.error?.user_message || 'Failed to update job')
+    }
+  }
+
+  const handleDelete = async (id: number) => {
     if (!confirm('Delete this cron job?')) return
     try {
       await api.delete(`/cron/${id}`)
-      loadJobs()
-    } catch (err) {
-      console.error(err)
+      setJobs(jobs.filter((j) => j.id !== id))
+    } catch (err: any) {
+      alert(err.response?.data?.error?.user_message || 'Failed to delete')
     }
   }
 
-  const toggleJob = async (id: number, enabled: boolean) => {
-    try {
-      await api.post(`/cron/${id}/${enabled ? 'enable' : 'disable'}`)
-      loadJobs()
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const viewLogs = async (job: CronJob) => {
-    setShowLogs(job)
-    try {
-      const res = await api.get(`/cron/${job.id}/logs`)
-      setLogs(res.data.data || [])
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
-  const describeSchedule = (schedule: string): string => {
-    const parts = schedule.split(' ')
-    if (parts.length !== 5) return schedule
-
-    const [min, hour, dom, mon, dow] = parts
-
-    if (dom === '*' && mon === '*' && dow === '*') {
-      return `Every day at ${hour}:${min.padStart(2, '0')}`
-    }
-    if (dow === '0' && dom === '*') {
-      return `Every Sunday at ${hour}:${min.padStart(2, '0')}`
-    }
-    if (dom === '1' && mon === '*') {
-      return `First day of every month at ${hour}:${min.padStart(2, '0')}`
-    }
-
-    return schedule
-  }
+  const columns = [
+    {
+      key: 'name',
+      header: 'Job',
+      render: (job: CronJob) => (
+        <div className="flex items-center gap-3">
+          <div className={cn('w-8 h-8 rounded flex items-center justify-center',
+            job.status === 'active' ? 'bg-success/10' : 'bg-border')}>
+            <Terminal className="w-4 h-4 text-text-secondary" />
+          </div>
+          <div>
+            <p className="font-medium text-sm">{job.name}</p>
+            <p className="text-xs font-mono text-text-secondary max-w-xs truncate">{job.command}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'schedule',
+      header: 'Schedule',
+      render: (job: CronJob) => (
+        <div>
+          <span className="text-sm font-mono">{job.schedule}</span>
+          <p className="text-xs text-text-secondary">{job.type}</p>
+        </div>
+      ),
+    },
+    {
+      key: 'last_run',
+      header: 'Last Run',
+      render: (job: CronJob) => (
+        <div className="flex items-center gap-2">
+          {job.last_status === 'success' && <CheckCircle className="w-3.5 h-3.5 text-success" />}
+          {job.last_status === 'failed' && <XCircle className="w-3.5 h-3.5 text-danger" />}
+          <span className="text-xs text-text-secondary">
+            {job.last_run ? timeAgo(job.last_run) : 'Never'}
+          </span>
+        </div>
+      ),
+    },
+    {
+      key: 'next_run',
+      header: 'Next Run',
+      render: (job: CronJob) => (
+        <span className="text-xs text-text-secondary">
+          {job.next_run ? formatDate(job.next_run) : '—'}
+        </span>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (job: CronJob) => (
+        <button
+          onClick={() => handleToggle(job.id, job.status === 'active')}
+          className={cn('relative w-10 h-5 rounded-full transition-colors',
+            job.status === 'active' ? 'bg-success' : 'bg-border')}
+        >
+          <span className={cn('absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform',
+            job.status === 'active' ? 'left-5.5' : 'left-0.5')} />
+        </button>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '80px',
+      render: (job: CronJob) => (
+        <button
+          onClick={() => handleDelete(job.id)}
+          className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded transition-colors"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      ),
+    },
+  ]
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-lg font-semibold">Cron Jobs</h1>
-          <p className="text-sm text-muted-foreground">
-            Cron Job · A task that runs automatically on a schedule
-          </p>
-        </div>
-        <button
-          onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:opacity-90"
-        >
-          <Plus size={16} />
-          Create Job
-        </button>
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Cron Jobs"
+        description="Schedule automated tasks to run on your server"
+        breadcrumbs={[{ label: 'Cron Jobs' }]}
+        actions={
+          <Button onClick={() => setShowModal(true)}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Job
+          </Button>
+        }
+      />
 
-      {loading ? (
-        <div className="text-muted-foreground">Loading...</div>
-      ) : jobs.length === 0 ? (
-        <div className="text-center py-12 border border-border">
-          <Clock size={48} className="mx-auto text-muted-foreground mb-4" />
-          <p className="text-muted-foreground">No cron jobs configured</p>
-        </div>
-      ) : (
-        <div className="border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 border-b border-border">
-              <tr>
-                <th className="text-left p-3 font-medium">Schedule</th>
-                <th className="text-left p-3 font-medium">Command</th>
-                <th className="text-left p-3 font-medium">Run As</th>
-                <th className="text-left p-3 font-medium">Last Run</th>
-                <th className="text-left p-3 font-medium">Status</th>
-                <th className="text-left p-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {jobs.map((job) => (
-                <tr key={job.id} className="border-b border-border hover:bg-muted/30">
-                  <td className="p-3">
-                    <div className="font-mono text-xs">{job.schedule}</div>
-                    <div className="text-xs text-muted-foreground">{describeSchedule(job.schedule)}</div>
-                  </td>
-                  <td className="p-3 font-mono text-xs max-w-xs truncate">{job.command}</td>
-                  <td className="p-3 text-muted-foreground">{job.run_as}</td>
-                  <td className="p-3 text-muted-foreground text-xs">
-                    {job.last_run ? new Date(job.last_run).toLocaleString() : 'Never'}
-                  </td>
-                  <td className="p-3">
-                    {job.last_status ? (
-                      <span className={`text-xs px-2 py-1 rounded ${job.last_status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {job.last_status}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    )}
-                  </td>
-                  <td className="p-3">
-                    <div className="flex gap-2">
-                      <button onClick={() => toggleJob(job.id, !job.enabled)} className="text-primary hover:underline text-xs">
-                        {job.enabled ? 'Disable' : 'Enable'}
-                      </button>
-                      <button onClick={() => viewLogs(job)} className="text-primary hover:underline text-xs">Logs</button>
-                      <button onClick={() => deleteJob(job.id)} className="text-red-600 hover:underline text-xs">Delete</button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {showModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card border border-border p-6 w-[480px]">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium">Create Cron Job</h3>
-              <button onClick={() => setShowModal(false)} className="text-muted-foreground hover:text-foreground">
-                <X size={20} />
-              </button>
-            </div>
-
-            <div className="space-y-3">
-              <div>
-                <label className="block text-sm mb-1">Schedule (Cron Expression)</label>
-                <input
-                  type="text"
-                  value={formData.schedule}
-                  onChange={(e) => setFormData({ ...formData, schedule: e.target.value })}
-                  className="w-full border border-border px-3 py-2 text-sm font-mono"
-                  placeholder="0 3 * * *"
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Format: minute hour day month weekday. Use standard cron syntax.
-                </p>
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Command</label>
-                <textarea
-                  value={formData.command}
-                  onChange={(e) => setFormData({ ...formData, command: e.target.value })}
-                  className="w-full border border-border px-3 py-2 text-sm font-mono h-20"
-                  placeholder="/usr/local/bin/backup.sh"
-                />
-              </div>
-              <div>
-                <label className="block text-sm mb-1">Run As</label>
-                <select
-                  value={formData.run_as}
-                  onChange={(e) => setFormData({ ...formData, run_as: e.target.value })}
-                  className="w-full border border-border px-3 py-2 text-sm"
-                >
-                  <option value="root">root</option>
-                  <option value="juvia">juvia</option>
-                </select>
-              </div>
-
-              <button
-                onClick={createJob}
-                className="w-full bg-primary text-primary-foreground py-2 text-sm font-medium hover:opacity-90"
-              >
-                Create Cron Job
-              </button>
+      <Card padding="none">
+        <div className="p-4 flex items-center justify-between border-b border-border">
+          <div className="flex items-center gap-3">
+            <Clock className="w-5 h-5 text-text-secondary" />
+            <div>
+              <p className="font-medium">{jobs.filter(j => j.status === 'active').length} active jobs</p>
+              <p className="text-xs text-text-secondary">Automated task scheduler</p>
             </div>
           </div>
         </div>
-      )}
+        <Table
+          columns={columns}
+          data={jobs}
+          keyField="id"
+          loading={loading}
+          emptyMessage="No cron jobs configured"
+        />
+      </Card>
 
-      {showLogs && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-card border border-border p-6 w-[640px] max-h-[80vh] overflow-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-medium">Execution History</h3>
-              <button onClick={() => setShowLogs(null)} className="text-muted-foreground hover:text-foreground">
-                <X size={20} />
-              </button>
-            </div>
-
-            {logs.length === 0 ? (
-              <p className="text-muted-foreground text-center py-4">No execution history</p>
-            ) : (
-              <div className="space-y-3">
-                {logs.map((log) => (
-                  <div key={log.id} className="border border-border p-3">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(log.run_at).toLocaleString()}
-                      </span>
-                      <span className={`text-xs px-2 py-1 rounded ${log.status === 'success' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        {log.status}
-                      </span>
-                    </div>
-                    <pre className="text-xs font-mono bg-black text-white p-2 overflow-auto max-h-32">
-                      {log.output || '(no output)'}
-                    </pre>
-                  </div>
-                ))}
-              </div>
-            )}
+      <Modal
+        open={showModal}
+        onClose={() => setShowModal(false)}
+        title="Add Cron Job"
+        size="md"
+      >
+        <div className="space-y-4">
+          <FormGroup>
+            <Label>Job Name</Label>
+            <Input
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="Daily backup"
+            />
+          </FormGroup>
+          <FormGroup>
+            <Label>Command</Label>
+            <Input
+              value={formData.command}
+              onChange={(e) => setFormData({ ...formData, command: e.target.value })}
+              placeholder="/usr/local/bin/backup.sh"
+            />
+          </FormGroup>
+          <FormGroup>
+            <Label>Frequency</Label>
+            <Select
+              value={formData.frequency}
+              onChange={(e) => {
+                const freq = e.target.value
+                setFormData({ ...formData, frequency: freq })
+                const presets: Record<string, string> = {
+                  hourly: '0 * * * *',
+                  daily: '0 0 * * *',
+                  weekly: '0 0 * * 0',
+                  monthly: '0 0 1 * *',
+                }
+                if (presets[freq]) setFormData({ ...formData, schedule: presets[freq] })
+              }}
+            >
+              <option value="hourly">Every hour</option>
+              <option value="daily">Daily at midnight</option>
+              <option value="weekly">Weekly on Sunday</option>
+              <option value="monthly">Monthly on 1st</option>
+            </Select>
+          </FormGroup>
+          <FormGroup>
+            <Label>Cron Expression (advanced)</Label>
+            <Input
+              value={formData.schedule}
+              onChange={(e) => setFormData({ ...formData, schedule: e.target.value })}
+              placeholder="0 3 * * *"
+            />
+          </FormGroup>
+          <div className="flex justify-end gap-3 pt-2">
+            <Button variant="outline" onClick={() => setShowModal(false)}>Cancel</Button>
+            <Button onClick={handleCreate} loading={saving}>Create Job</Button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   )
 }

@@ -1,39 +1,63 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Trash2, RotateCcw, AlertTriangle, Clock, Globe } from 'lucide-react'
+import { Card } from '../../components/ui/Card'
+import { Badge, StatusBadge } from '../../components/ui/Badge'
+import { Table } from '../../components/ui/Table'
+import { PageHeader } from '../../components/ui/Misc'
+import { Modal, ConfirmModal } from '../../components/ui/Modal'
 import api from '../../lib/api'
+import { formatDate, timeAgo } from '../../lib/utils'
 
-interface Website {
+interface TrashedWebsite {
   id: number
   domain: string
   deleted_at: string
+  days_remaining: number
+  status: string
 }
 
 export default function Trash() {
-  const [websites, setWebsites] = useState<Website[]>([])
+  const [websites, setWebsites] = useState<TrashedWebsite[]>([])
   const [loading, setLoading] = useState(true)
+  const [selectedSite, setSelectedSite] = useState<TrashedWebsite | null>(null)
+  const [showRestoreModal, setShowRestoreModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
 
   useEffect(() => {
-    api.get('/websites/trash')
-      .then((res) => setWebsites(res.data.data || []))
-      .catch((err) => console.error(err))
-      .finally(() => setLoading(false))
+    loadTrash()
   }, [])
 
+  const loadTrash = async () => {
+    try {
+      const res = await api.get('/websites/trash')
+      setWebsites(res.data.data || [])
+    } catch (err) {
+      console.error('Failed to load trash:', err)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   const handleRestore = async (id: number) => {
-    if (!confirm('Restore this website?')) return
+    setActionLoading(true)
     try {
       await api.post(`/websites/${id}/restore`)
-      setWebsites(websites.filter(w => w.id !== id))
+      loadTrash()
+      setShowRestoreModal(false)
     } catch (err: any) {
       alert(err.response?.data?.error?.user_message || 'Failed to restore')
+    } finally {
+      setActionLoading(false)
     }
   }
 
   const handlePermanentDelete = async (id: number) => {
-    if (!confirm('Permanently delete this website? This cannot be undone.')) return
     try {
       await api.delete(`/websites/${id}/permanent`)
-      setWebsites(websites.filter(w => w.id !== id))
+      setWebsites(websites.filter((w) => w.id !== id))
+      setShowDeleteModal(false)
     } catch (err: any) {
       alert(err.response?.data?.error?.user_message || 'Failed to delete')
     }
@@ -49,71 +73,122 @@ export default function Trash() {
     }
   }
 
-  if (loading) {
-    return <div className="p-6 text-muted-foreground">Loading...</div>
-  }
+  const columns = [
+    {
+      key: 'domain',
+      header: 'Domain',
+      render: (site: TrashedWebsite) => (
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded bg-accent/50 flex items-center justify-center">
+            <Globe className="w-4 h-4 text-text-secondary" />
+          </div>
+          <div>
+            <p className="font-medium">{site.domain}</p>
+            <p className="text-xs text-text-secondary">Deleted {timeAgo(site.deleted_at)}</p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (site: TrashedWebsite) => <StatusBadge status={site.status} />,
+    },
+    {
+      key: 'days_remaining',
+      header: 'Days Until Permanent Delete',
+      render: (site: TrashedWebsite) => (
+        <div className="flex items-center gap-2">
+          <Clock className="w-3.5 h-3.5 text-text-secondary" />
+          <span className="text-sm">{site.days_remaining} days</span>
+        </div>
+      ),
+    },
+    {
+      key: 'actions',
+      header: '',
+      width: '160px',
+      render: (site: TrashedWebsite) => (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setSelectedSite(site)
+              setShowRestoreModal(true)
+            }}
+            className="px-3 py-1.5 text-xs font-medium border border-border rounded hover:bg-accent transition-colors"
+          >
+            <RotateCcw className="w-3.5 h-3.5 inline mr-1" />
+            Restore
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setSelectedSite(site)
+              setShowDeleteModal(true)
+            }}
+            className="px-3 py-1.5 text-xs font-medium border border-danger/50 text-danger rounded hover:bg-danger/10 transition-colors"
+          >
+            Delete
+          </button>
+        </div>
+      ),
+    },
+  ]
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-lg font-semibold">Trash</h1>
-        {websites.length > 0 && (
-          <button
-            onClick={handlePurgeAll}
-            className="text-sm text-red-600 hover:underline"
-          >
-            Purge All
-          </button>
-        )}
-      </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Trash"
+        description="Deleted websites are kept for 30 days before permanent deletion"
+        breadcrumbs={[
+          { label: 'Websites', href: '/websites' },
+          { label: 'Trash' },
+        ]}
+        actions={
+          websites.length > 0 && (
+            <button
+              onClick={handlePurgeAll}
+              className="inline-flex items-center gap-2 px-4 py-2 border border-danger/50 text-danger text-sm font-medium rounded hover:bg-danger/10 transition-colors"
+            >
+              <Trash2 className="w-4 h-4" />
+              Purge All
+            </button>
+          )
+        }
+      />
 
-      {websites.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <p>Trash is empty</p>
-        </div>
-      ) : (
-        <div className="border border-border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 border-b border-border">
-              <tr>
-                <th className="text-left p-3 font-medium">Domain</th>
-                <th className="text-left p-3 font-medium">Deleted</th>
-                <th className="text-left p-3 font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {websites.map((site) => (
-                <tr key={site.id} className="border-b border-border">
-                  <td className="p-3">
-                    <Link to={`/websites/${site.id}`} className="text-primary hover:underline">
-                      {site.domain}
-                    </Link>
-                  </td>
-                  <td className="p-3 text-muted-foreground">
-                    {new Date(site.deleted_at).toLocaleDateString()}
-                  </td>
-                  <td className="p-3">
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleRestore(site.id)}
-                        className="text-green-600 hover:underline text-xs"
-                      >
-                        Restore
-                      </button>
-                      <button
-                        onClick={() => handlePermanentDelete(site.id)}
-                        className="text-red-600 hover:underline text-xs"
-                      >
-                        Delete Permanently
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      <Card padding="none">
+        <Table
+          columns={columns}
+          data={websites}
+          keyField="id"
+          loading={loading}
+          emptyMessage="Trash is empty"
+        />
+      </Card>
+
+      <ConfirmModal
+        open={showRestoreModal}
+        onClose={() => setShowRestoreModal(false)}
+        onConfirm={() => selectedSite && handleRestore(selectedSite.id)}
+        title="Restore Website"
+        description={`Restore ${selectedSite?.domain} from trash?`}
+        confirmLabel="Restore"
+        variant="primary"
+        loading={actionLoading}
+      />
+
+      <ConfirmModal
+        open={showDeleteModal}
+        onClose={() => setShowDeleteModal(false)}
+        onConfirm={() => selectedSite && handlePermanentDelete(selectedSite.id)}
+        title="Permanently Delete"
+        description={`This will permanently delete ${selectedSite?.domain}. This action cannot be undone.`}
+        confirmLabel="Delete Forever"
+        variant="danger"
+        loading={actionLoading}
+      />
     </div>
   )
 }
