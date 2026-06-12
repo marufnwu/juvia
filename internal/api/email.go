@@ -169,12 +169,12 @@ func updateMailboxHandler(cfg RouterConfig) gin.HandlerFunc {
 		}
 
 		displayName := req.DisplayName
-		if displayName == "" {
-			displayName = mailbox.DisplayName
+		if displayName == "" && mailbox.DisplayName != nil {
+			displayName = *mailbox.DisplayName
 		}
 		forwardTo := req.ForwardTo
-		if forwardTo == "" {
-			forwardTo = mailbox.ForwardTo
+		if forwardTo == "" && mailbox.ForwardTo != nil {
+			forwardTo = *mailbox.ForwardTo
 		}
 		quota := req.Quota
 		if quota == 0 {

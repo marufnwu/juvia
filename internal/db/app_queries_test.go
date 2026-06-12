@@ -73,8 +73,8 @@ func TestCreateApp(t *testing.T) {
 	if app.WebsiteID != 1 {
 		t.Errorf("expected website_id 1, got %d", app.WebsiteID)
 	}
-	if app.Version != "6.0" {
-		t.Errorf("expected version '6.0', got '%s'", app.Version)
+	if app.Version == nil || *app.Version != "6.0" {
+		t.Errorf("expected version '6.0', got '%v'", app.Version)
 	}
 }
 
@@ -133,8 +133,8 @@ func TestUpdateAppVersion(t *testing.T) {
 		t.Fatalf("GetAppByID failed: %v", err)
 	}
 
-	if updated.Version != "6.1" {
-		t.Errorf("expected version '6.1', got '%s'", updated.Version)
+	if updated.Version == nil || *updated.Version != "6.1" {
+		t.Errorf("expected version '6.1', got '%v'", updated.Version)
 	}
 	if !updated.UpdateAvailable {
 		t.Error("expected update_available to be true")

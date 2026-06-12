@@ -146,7 +146,7 @@ func (e *Engine) checkWebsites(ctx context.Context) {
 			continue
 		}
 
-		if site.DocumentRoot == "" {
+		if site.DocumentRoot == nil || *site.DocumentRoot == "" {
 			continue
 		}
 

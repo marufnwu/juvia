@@ -121,6 +121,26 @@ func (db *DB) UpdateWebsite(ctx context.Context, id int64, phpVersion, webServer
 	return nil
 }
 
+func (db *DB) UpdateWebsiteStatus(ctx context.Context, id int64, status string) error {
+	_, err := db.ExecContext(ctx,
+		`UPDATE websites SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		status, id)
+	if err != nil {
+		return fmt.Errorf("update website status: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) UpdateWebsiteDocumentRoot(ctx context.Context, id int64, documentRoot string) error {
+	_, err := db.ExecContext(ctx,
+		`UPDATE websites SET document_root = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		documentRoot, id)
+	if err != nil {
+		return fmt.Errorf("update website document root: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) SoftDeleteWebsite(ctx context.Context, id int64) error {
 	_, err := db.ExecContext(ctx,
 		`UPDATE websites SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,

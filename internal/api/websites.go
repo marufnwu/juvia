@@ -123,6 +123,15 @@ func createWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		documentRoot := "/home/" + req.Domain + "/public_html"
+		website, err := cfg.DB.CreateWebsite(c.Request.Context(), req.Domain, documentRoot, req.PHPVersion, req.WebServer, userID)
+		if err != nil {
+			tasks.NewRunner(cfg.DB.DB, cfg.Log).FailTask(c.Request.Context(), task.TaskID, err.Error())
+			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
+			return
+		}
+		_ = cfg.DB.CreateDomain(c.Request.Context(), website.ID, req.Domain, "primary")
+
 		resp, err := cfg.AgentClient.Call(c.Request.Context(), "website.create", map[string]interface{}{
 			"domain":      req.Domain,
 			"php_version": req.PHPVersion,
@@ -130,11 +139,13 @@ func createWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			"task_id":     task.TaskID,
 		})
 		if err != nil {
+			cfg.DB.UpdateWebsiteStatus(c.Request.Context(), website.ID, "failed")
 			tasks.NewRunner(cfg.DB.DB, cfg.Log).FailTask(c.Request.Context(), task.TaskID, err.Error())
-			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to communicate with agent"))
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to communicate with agent: "+err.Error()))
 			return
 		}
 		if resp.Error != nil {
+			cfg.DB.UpdateWebsiteStatus(c.Request.Context(), website.ID, "failed")
 			tasks.NewRunner(cfg.DB.DB, cfg.Log).FailTask(c.Request.Context(), task.TaskID, resp.Error.Message)
 			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
 			return
@@ -142,35 +153,33 @@ func createWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 
 		resultMap, ok := resp.Result.(map[string]interface{})
 		if !ok {
+			cfg.DB.UpdateWebsiteStatus(c.Request.Context(), website.ID, "failed")
 			tasks.NewRunner(cfg.DB.DB, cfg.Log).FailTask(c.Request.Context(), task.TaskID, "invalid agent response")
 			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "invalid agent response"))
 			return
 		}
 
-		documentRoot, _ := resultMap["document_root"].(string)
-		if documentRoot == "" {
-			documentRoot = "/home/" + req.Domain + "/public_html"
+		if respDocRoot, ok := resultMap["document_root"].(string); ok && respDocRoot != "" {
+			documentRoot = respDocRoot
 		}
 
-		website, err := cfg.DB.CreateWebsite(c.Request.Context(), req.Domain, documentRoot, req.PHPVersion, req.WebServer, userID)
-		if err != nil {
-			tasks.NewRunner(cfg.DB.DB, cfg.Log).FailTask(c.Request.Context(), task.TaskID, err.Error())
-			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
-			return
+		if err := cfg.DB.UpdateWebsiteDocumentRoot(c.Request.Context(), website.ID, documentRoot); err != nil {
 		}
 
-		_ = cfg.DB.CreateDomain(c.Request.Context(), website.ID, req.Domain, "primary")
-
+		cfg.DB.UpdateWebsiteStatus(c.Request.Context(), website.ID, "active")
 		tasks.NewRunner(cfg.DB.DB, cfg.Log).CompleteTask(c.Request.Context(), task.TaskID, `{"website_id":`+strconv.FormatInt(website.ID, 10)+`}`)
 
-		cfg.DB.LogAudit(c.Request.Context(),&userID, "Created website "+req.Domain, c.ClientIP(), c.Request.UserAgent(), "")
+		cfg.DB.LogAudit(c.Request.Context(), &userID, "Created website "+req.Domain, c.ClientIP(), c.Request.UserAgent(), "")
 
-		c.JSON(http.StatusAccepted, gin.H{
+		c.JSON(http.StatusCreated, gin.H{
 			"success": true,
 			"data": gin.H{
-				"task_id":    task.TaskID,
-				"website_id": website.ID,
-				"domain":     website.Domain,
+				"id":          website.ID,
+				"domain":      website.Domain,
+				"status":      "active",
+				"php_version": req.PHPVersion,
+				"web_server":  req.WebServer,
+				"task_id":     task.TaskID,
 			},
 		})
 	}
@@ -243,8 +252,8 @@ func updateWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 		}
 
 		phpVersion := req.PHPVersion
-		if phpVersion == "" {
-			phpVersion = website.PHPVersion
+		if phpVersion == "" && website.PHPVersion != nil {
+			phpVersion = *website.PHPVersion
 		}
 		webServer := req.WebServer
 		if webServer == "" {

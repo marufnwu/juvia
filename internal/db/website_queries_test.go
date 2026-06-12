@@ -54,8 +54,8 @@ func TestCreateAndGetWebsite(t *testing.T) {
 	if w.Domain != "example.com" {
 		t.Errorf("expected domain example.com, got %s", w.Domain)
 	}
-	if w.PHPVersion != "8.2" {
-		t.Errorf("expected php version 8.2, got %s", w.PHPVersion)
+	if w.PHPVersion == nil || *w.PHPVersion != "8.2" {
+		t.Errorf("expected php version 8.2, got %v", w.PHPVersion)
 	}
 	if w.WebServer != "nginx" {
 		t.Errorf("expected web server nginx, got %s", w.WebServer)

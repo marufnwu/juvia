@@ -188,8 +188,8 @@ func updateFirewallRuleHandler(cfg RouterConfig) gin.HandlerFunc {
 			name = rule.Name
 		}
 		description := req.Description
-		if description == "" {
-			description = rule.Description
+		if description == "" && rule.Description != nil {
+			description = *rule.Description
 		}
 		action := req.Action
 		if action == "" {

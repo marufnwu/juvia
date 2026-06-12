@@ -4,18 +4,18 @@ import "time"
 
 // User represents a panel user.
 type User struct {
-	ID               int64     `json:"id" db:"id"`
-	Username         string    `json:"username" db:"username"`
-	PasswordHash     string    `json:"-" db:"password_hash"`
-	Role             string    `json:"role" db:"role"`
-	Email            string    `json:"email" db:"email"`
-	Active           bool      `json:"active" db:"active"`
-	TwoFAEnabled     bool      `json:"2fa_enabled" db:"totp_enabled"`
-	TwoFASecret      string    `json:"-" db:"totp_secret"`
-	TwoFARecoveryCodes string  `json:"-" db:"totp_recovery_codes"`
-	CreatedAt        time.Time `json:"created_at" db:"created_at"`
-	LastLogin        *time.Time `json:"last_login,omitempty" db:"last_login"`
-	UpdatedAt        time.Time `json:"updated_at" db:"updated_at"`
+	ID                 int64      `json:"id" db:"id"`
+	Username           string     `json:"username" db:"username"`
+	PasswordHash       string     `json:"-" db:"password_hash"`
+	Role               string     `json:"role" db:"role"`
+	Email              *string    `json:"email,omitempty" db:"email"`
+	Active             bool       `json:"active" db:"active"`
+	TwoFAEnabled       bool       `json:"2fa_enabled" db:"totp_enabled"`
+	TwoFASecret        *string    `json:"-" db:"totp_secret"`
+	TwoFARecoveryCodes *string    `json:"-" db:"totp_recovery_codes"`
+	CreatedAt          time.Time  `json:"created_at" db:"created_at"`
+	LastLogin          *time.Time `json:"last_login,omitempty" db:"last_login"`
+	UpdatedAt          time.Time  `json:"updated_at" db:"updated_at"`
 }
 
 // UserSite maps users to websites for per-site roles.
@@ -31,8 +31,8 @@ type Session struct {
 	ID        int64     `json:"id" db:"id"`
 	UserID    int64     `json:"user_id" db:"user_id"`
 	TokenHash string    `json:"-" db:"token_hash"`
-	IPAddress string    `json:"ip_address" db:"ip_address"`
-	UserAgent string    `json:"user_agent" db:"user_agent"`
+	IPAddress *string   `json:"ip_address,omitempty" db:"ip_address"`
+	UserAgent *string   `json:"user_agent,omitempty" db:"user_agent"`
 	Revoked   bool      `json:"revoked" db:"revoked"`
 	ExpiresAt time.Time `json:"expires_at" db:"expires_at"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
@@ -42,14 +42,14 @@ type Session struct {
 type Website struct {
 	ID           int64      `json:"id" db:"id"`
 	Domain       string     `json:"domain" db:"domain"`
-	DocumentRoot string     `json:"document_root" db:"document_root"`
-	PHPVersion   string     `json:"php_version" db:"php_version"`
+	DocumentRoot *string    `json:"document_root,omitempty" db:"document_root"`
+	PHPVersion   *string    `json:"php_version,omitempty" db:"php_version"`
 	WebServer    string     `json:"web_server" db:"web_server"`
 	SSLEnabled   bool       `json:"ssl_enabled" db:"ssl_enabled"`
 	SSLExpiry    *time.Time `json:"ssl_expiry,omitempty" db:"ssl_expiry"`
 	Status       string     `json:"status" db:"status"`
 	DeletedAt    *time.Time `json:"deleted_at,omitempty" db:"deleted_at"`
-	UserID       int64      `json:"user_id" db:"user_id"`
+	UserID       *int64     `json:"user_id,omitempty" db:"user_id"`
 	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
 	UpdatedAt    time.Time  `json:"updated_at" db:"updated_at"`
 	GitConfig    string     `json:"git_config,omitempty" db:"git_config"`
@@ -67,7 +67,7 @@ type Domain struct {
 // Zone represents a DNS zone.
 type Zone struct {
 	ID        int64     `json:"id" db:"id"`
-	WebsiteID int64     `json:"website_id" db:"website_id"`
+	WebsiteID *int64    `json:"website_id,omitempty" db:"website_id"`
 	Domain    string    `json:"domain" db:"domain"`
 	Serial    int64     `json:"serial" db:"serial"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
@@ -91,7 +91,7 @@ type Database struct {
 	ID        int64     `json:"id" db:"id"`
 	Name      string    `json:"name" db:"name"`
 	Engine    string    `json:"engine" db:"engine"`
-	UserID    int64     `json:"user_id" db:"user_id"`
+	UserID    *int64    `json:"user_id,omitempty" db:"user_id"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 }
 
@@ -101,7 +101,7 @@ type DBUser struct {
 	DatabaseID   int64     `json:"database_id" db:"database_id"`
 	Username     string    `json:"username" db:"username"`
 	PasswordHash string    `json:"-" db:"password_hash"`
-	Host         string    `json:"host" db:"host"`
+	Host         *string   `json:"host,omitempty" db:"host"`
 	CreatedAt    time.Time `json:"created_at" db:"created_at"`
 }
 
@@ -111,11 +111,11 @@ type Mailbox struct {
 	Email                 string     `json:"email" db:"email"`
 	PasswordHash          string     `json:"-" db:"password_hash"`
 	Quota                 int64      `json:"quota" db:"quota"`
-	DisplayName           string     `json:"display_name" db:"display_name"`
-	ForwardTo             string     `json:"forward_to" db:"forward_to"`
+	DisplayName           *string    `json:"display_name,omitempty" db:"display_name"`
+	ForwardTo             *string    `json:"forward_to,omitempty" db:"forward_to"`
 	Status                string     `json:"status" db:"status"`
 	AutoresponderEnabled  bool       `json:"autoresponder_enabled" db:"autoresponder_enabled"`
-	AutoresponderMessage  string     `json:"autoresponder_message" db:"autoresponder_message"`
+	AutoresponderMessage  *string    `json:"autoresponder_message,omitempty" db:"autoresponder_message"`
 	AutoresponderStartDate *time.Time `json:"autoresponder_start_date,omitempty" db:"autoresponder_start_date"`
 	AutoresponderEndDate   *time.Time `json:"autoresponder_end_date,omitempty" db:"autoresponder_end_date"`
 	CreatedAt             time.Time  `json:"created_at" db:"created_at"`
@@ -177,7 +177,7 @@ type AuditLog struct {
 type FirewallRule struct {
 	ID          int64     `json:"id" db:"id"`
 	Name        string    `json:"name" db:"name"`
-	Description string    `json:"description" db:"description"`
+	Description *string   `json:"description,omitempty" db:"description"`
 	Action      string    `json:"action" db:"action"`
 	Port        string    `json:"port" db:"port"`
 	Protocol    string    `json:"protocol" db:"protocol"`
@@ -253,11 +253,11 @@ type Alert struct {
 type Service struct {
 	ID         int64     `json:"id" db:"id"`
 	Name       string    `json:"name" db:"name"`
-	Version    string    `json:"version" db:"version"`
+	Version    *string   `json:"version,omitempty" db:"version"`
 	Installed  bool      `json:"installed" db:"installed"`
 	Running    bool      `json:"running" db:"running"`
 	Health     string    `json:"health" db:"health"`
-	LastError  string    `json:"last_error" db:"last_error"`
+	LastError  *string   `json:"last_error,omitempty" db:"last_error"`
 	CheckedAt  time.Time `json:"checked_at" db:"checked_at"`
 }
 
@@ -265,7 +265,7 @@ type Service struct {
 type Setting struct {
 	ID        int64     `json:"id" db:"id"`
 	Key       string    `json:"key" db:"key"`
-	Value     string    `json:"value" db:"value"`
+	Value     *string   `json:"value,omitempty" db:"value"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
@@ -275,7 +275,7 @@ type App struct {
 	AppType         string    `json:"app_type" db:"app_type"`
 	Name            string    `json:"name" db:"name"`
 	WebsiteID       int64     `json:"website_id" db:"website_id"`
-	Version         string    `json:"version" db:"version"`
+	Version         *string   `json:"version,omitempty" db:"version"`
 	InstalledAt     time.Time `json:"installed_at" db:"installed_at"`
 	UpdateAvailable bool      `json:"update_available" db:"update_available"`
 }
