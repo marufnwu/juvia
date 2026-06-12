@@ -195,8 +195,8 @@ type CronJob struct {
 	Type       string     `json:"type" db:"type"`
 	Enabled    bool       `json:"enabled" db:"enabled"`
 	LastRun    *time.Time `json:"last_run,omitempty" db:"last_run"`
-	LastStatus string     `json:"last_status" db:"last_status"`
-	LastOutput string     `json:"last_output" db:"last_output"`
+	LastStatus *string    `json:"last_status,omitempty" db:"last_status"`
+	LastOutput *string    `json:"last_output,omitempty" db:"last_output"`
 	CreatedAt  time.Time  `json:"created_at" db:"created_at"`
 }
 
@@ -219,9 +219,9 @@ type Backup struct {
 	Status      string     `json:"status" db:"status"`
 	Storage     string     `json:"storage" db:"storage"`
 	Path        string     `json:"path" db:"path"`
-	SizeBytes   int64      `json:"size_bytes" db:"size_bytes"`
-	Checksum    string     `json:"checksum" db:"checksum"`
-	Verified    bool       `json:"verified" db:"verified"`
+	SizeBytes   int64       `json:"size_bytes" db:"size_bytes"`
+	Checksum    *string     `json:"checksum,omitempty" db:"checksum"`
+	Verified    bool        `json:"verified" db:"verified"`
 	VerifiedAt  *time.Time `json:"verified_at,omitempty" db:"verified_at"`
 	CreatedAt   time.Time  `json:"created_at" db:"created_at"`
 }

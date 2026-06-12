@@ -16,6 +16,7 @@ import (
 	"juvia/internal/agent/email"
 	"juvia/internal/agent/firewall"
 	"juvia/internal/agent/git"
+	"juvia/internal/agent/services"
 	"juvia/internal/agent/terminal"
 	"juvia/internal/socket"
 )
@@ -81,6 +82,8 @@ func main() {
 	server.RegisterMethod("webmail.install", email.HandleWebmailInstall)
 	server.RegisterMethod("webmail.uninstall", email.HandleWebmailUninstall)
 	server.RegisterMethod("webmail.status", email.HandleWebmailStatus)
+	server.RegisterMethod("services.status", services.HandleServicesStatus)
+	server.RegisterMethod("services.restart", services.HandleServicesRestart)
 	server.RegisterMethod("terminal.start", terminal.HandleTerminalStart)
 	server.RegisterMethod("terminal.stop", terminal.HandleTerminalStop)
 
