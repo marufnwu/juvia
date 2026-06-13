@@ -8,6 +8,7 @@ type ResourceRegistry struct {
 	Websites        []int64
 	Databases       []int64
 	DatabaseUsers   map[int64][]int64
+	Users           []int64
 	Mailboxes       []int64
 	Aliases         []int64
 	Forwarders      []int64
@@ -171,4 +172,19 @@ func (r *ResourceRegistry) GetDNSRecord() int64 {
 		return 0
 	}
 	return r.DNSRecords[0]
+}
+
+func (r *ResourceRegistry) AddUser(id int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Users = append(r.Users, id)
+}
+
+func (r *ResourceRegistry) GetUser() int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.Users) == 0 {
+		return 0
+	}
+	return r.Users[0]
 }

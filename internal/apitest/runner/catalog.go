@@ -56,7 +56,7 @@ var Endpoints = []Endpoint{
 
 	// === PHASE 2: Test with Real IDs ===
 	{Method: http.MethodGet, Path: "/api/v1/users", Auth: AuthAdmin, Phase: PhaseAnytime, Description: "List users"},
-	{Method: http.MethodPost, Path: "/api/v1/users", Auth: AuthAdmin, Phase: PhaseAnytime, Description: "Create user"},
+	{Method: http.MethodPost, Path: "/api/v1/users", Auth: AuthAdmin, Phase: PhaseAnytime, ResourceType: "user", Description: "Create user"},
 	{Method: http.MethodGet, Path: "/api/v1/users/:id", Auth: AuthAdmin, Phase: PhaseAfterCreate, ResourceType: "user", Description: "Get user"},
 	{Method: http.MethodPut, Path: "/api/v1/users/:id", Auth: AuthAdmin, Phase: PhaseAfterCreate, ResourceType: "user", Description: "Update user"},
 	{Method: http.MethodDelete, Path: "/api/v1/users/:id", Auth: AuthAdmin, Phase: PhaseAfterCreate, ResourceType: "user", Description: "Delete user"},
@@ -94,18 +94,18 @@ var Endpoints = []Endpoint{
 
 	{Method: http.MethodGet, Path: "/api/v1/databases", Auth: AuthUser, Phase: PhaseAnytime, Description: "List databases"},
 	{Method: http.MethodGet, Path: "/api/v1/databases/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "database", Description: "Get database"},
-	{Method: http.MethodDelete, Path: "/api/v1/databases/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "database", AgentDependent: true, Description: "Delete database"},
 	{Method: http.MethodPost, Path: "/api/v1/databases/:id/users", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "database", AgentDependent: true, Description: "Create DB user"},
 	{Method: http.MethodDelete, Path: "/api/v1/databases/:id/users/:user_id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "database-user", AgentDependent: true, Description: "Delete DB user"},
-	{Method: http.MethodPost, Path: "/api/v1/databases/:id/export", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "database", AgentDependent: true, Description: "Export database"},
 	{Method: http.MethodGet, Path: "/api/v1/databases/:id/tables", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "database", Description: "List tables"},
 	{Method: http.MethodGet, Path: "/api/v1/databases/:id/tables/:table/rows", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "database", Description: "Get table rows"},
 	{Method: http.MethodPost, Path: "/api/v1/databases/:id/query", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "database", Description: "Query database"},
+	{Method: http.MethodPost, Path: "/api/v1/databases/:id/export", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "database", AgentDependent: true, Description: "Export database"},
+	{Method: http.MethodDelete, Path: "/api/v1/databases/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "database", AgentDependent: true, Description: "Delete database"},
 
 	{Method: http.MethodGet, Path: "/api/v1/email/mailboxes", Auth: AuthUser, Phase: PhaseAnytime, Description: "List mailboxes"},
 	{Method: http.MethodGet, Path: "/api/v1/email/mailboxes/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "mailbox", Description: "Get mailbox"},
-	{Method: http.MethodDelete, Path: "/api/v1/email/mailboxes/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "mailbox", AgentDependent: true, Description: "Delete mailbox"},
 	{Method: http.MethodPut, Path: "/api/v1/email/mailboxes/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "mailbox", Description: "Update mailbox"},
+	{Method: http.MethodDelete, Path: "/api/v1/email/mailboxes/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "mailbox", AgentDependent: true, Description: "Delete mailbox"},
 	{Method: http.MethodGet, Path: "/api/v1/email/aliases", Auth: AuthUser, Phase: PhaseAnytime, Description: "List aliases"},
 	{Method: http.MethodDelete, Path: "/api/v1/email/aliases/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "alias", AgentDependent: true, Description: "Delete alias"},
 	{Method: http.MethodGet, Path: "/api/v1/email/forwarders", Auth: AuthUser, Phase: PhaseAnytime, Description: "List forwarders"},

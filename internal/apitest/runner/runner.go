@@ -245,12 +245,18 @@ func (c *APIClient) ResolvePath(path string) string {
 		id = c.Registry.GetDatabase()
 	case strings.Contains(path, "/email/mailboxes/"):
 		id = c.Registry.GetMailbox()
-	case strings.Contains(path, "/firewall/rules/"):
+	case strings.Contains(path, "/email/aliases/"):
+		id = c.Registry.GetAlias()
+	case strings.Contains(path, "/email/forwarders/"):
+		id = c.Registry.GetForwarder()
+	case strings.Contains(path, "/firewall/"):
 		id = c.Registry.GetFirewallRule()
 	case strings.Contains(path, "/cron/"):
 		id = c.Registry.GetCronJob()
 	case strings.Contains(path, "/backups/"):
 		id = c.Registry.GetBackupSchedule()
+	case strings.Contains(path, "/users/"):
+		id = c.Registry.GetUser()
 	default:
 		id = c.Registry.GetWebsite()
 	}
@@ -397,6 +403,8 @@ func (c *APIClient) Run(destructive bool) ([]Result, error) {
 					c.Registry.AddBackupSchedule(id)
 				case "dns-record":
 					c.Registry.AddDNSRecord(id)
+				case "user":
+					c.Registry.AddUser(id)
 				case "backup":
 				case "database-user":
 					c.Registry.AddDatabaseUser(c.Registry.GetDatabase(), id)

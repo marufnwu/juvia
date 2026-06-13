@@ -191,6 +191,13 @@ func HandleFilesExtract(ctx context.Context, params json.RawMessage) (interface{
 	}
 
 	ext := strings.ToLower(filepath.Ext(safePath))
+	if ext == ".gz" {
+		if strings.HasSuffix(strings.ToLower(safePath), ".tar.gz") {
+			ext = ".tar.gz"
+		} else if strings.HasSuffix(strings.ToLower(safePath), ".tgz") {
+			ext = ".tgz"
+		}
+	}
 	if ext != ".zip" && ext != ".tar.gz" && ext != ".tgz" {
 		return nil, fmt.Errorf("unsupported archive type: %s", ext)
 	}
