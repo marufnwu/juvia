@@ -106,6 +106,14 @@ func downloadFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 		}
 
 		relPath := c.Query("path")
+		if relPath == "" {
+			var body struct {
+				Path string `json:"path"`
+			}
+			if err := c.ShouldBindJSON(&body); err == nil {
+				relPath = body.Path
+			}
+		}
 
 		resp, err := cfg.AgentClient.Call(c.Request.Context(), "files.download", map[string]interface{}{
 			"base_path": website.DocumentRoot,
@@ -276,6 +284,14 @@ func getFileContentHandler(cfg RouterConfig) gin.HandlerFunc {
 		}
 
 		relPath := c.Query("path")
+		if relPath == "" {
+			var body struct {
+				Path string `json:"path"`
+			}
+			if err := c.ShouldBindJSON(&body); err == nil {
+				relPath = body.Path
+			}
+		}
 
 		resp, err := cfg.AgentClient.Call(c.Request.Context(), "files.download", map[string]interface{}{
 			"base_path": website.DocumentRoot,

@@ -14,6 +14,7 @@ type ResourceRegistry struct {
 	FirewallRules   []int64
 	CronJobs        []int64
 	BackupSchedules []int64
+	DNSRecords      []int64
 }
 
 func NewResourceRegistry() *ResourceRegistry {
@@ -155,4 +156,19 @@ func (r *ResourceRegistry) GetBackupSchedule() int64 {
 		return 0
 	}
 	return r.BackupSchedules[0]
+}
+
+func (r *ResourceRegistry) AddDNSRecord(id int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.DNSRecords = append(r.DNSRecords, id)
+}
+
+func (r *ResourceRegistry) GetDNSRecord() int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.DNSRecords) == 0 {
+		return 0
+	}
+	return r.DNSRecords[0]
 }

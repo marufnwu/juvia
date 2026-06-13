@@ -236,7 +236,25 @@ func (c *APIClient) extractDomain(body string) string {
 func (c *APIClient) ResolvePath(path string) string {
 	result := path
 
-	result = strings.ReplaceAll(result, ":id", strconv.FormatInt(c.Registry.GetWebsite(), 10))
+	// Determine which resource :id refers to based on path pattern
+	var id int64
+	switch {
+	case strings.Contains(path, "/dns/records/"):
+		id = c.Registry.GetDNSRecord()
+	case strings.Contains(path, "/databases/"):
+		id = c.Registry.GetDatabase()
+	case strings.Contains(path, "/email/mailboxes/"):
+		id = c.Registry.GetMailbox()
+	case strings.Contains(path, "/firewall/rules/"):
+		id = c.Registry.GetFirewallRule()
+	case strings.Contains(path, "/cron/"):
+		id = c.Registry.GetCronJob()
+	case strings.Contains(path, "/backups/"):
+		id = c.Registry.GetBackupSchedule()
+	default:
+		id = c.Registry.GetWebsite()
+	}
+	result = strings.ReplaceAll(result, ":id", strconv.FormatInt(id, 10))
 	result = strings.ReplaceAll(result, ":user_id", strconv.FormatInt(c.Registry.GetDatabaseUser(c.Registry.GetDatabase()), 10))
 	result = strings.ReplaceAll(result, ":table", "test_table")
 	result = strings.ReplaceAll(result, ":app_id", "1")
@@ -354,7 +372,7 @@ func (c *APIClient) Run(destructive bool) ([]Result, error) {
 		result.Phase = string(ep.Phase)
 		result.Category = c.getCategory(ep.Path)
 
-		if result.Success && ep.ResourceType != "" && ep.Phase == PhaseAnytime {
+		if result.Success && ep.ResourceType != "" && (ep.Phase == PhaseAnytime || ep.Phase == PhaseAfterCreate) {
 			id := c.extractID(result.Body)
 			if id > 0 {
 				switch ep.ResourceType {
@@ -377,6 +395,8 @@ func (c *APIClient) Run(destructive bool) ([]Result, error) {
 					c.Registry.AddCronJob(id)
 				case "backup-schedule":
 					c.Registry.AddBackupSchedule(id)
+				case "dns-record":
+					c.Registry.AddDNSRecord(id)
 				case "backup":
 				case "database-user":
 					c.Registry.AddDatabaseUser(c.Registry.GetDatabase(), id)
