@@ -253,8 +253,10 @@ func (c *APIClient) ResolvePath(path string) string {
 		id = c.Registry.GetFirewallRule()
 	case strings.Contains(path, "/cron/"):
 		id = c.Registry.GetCronJob()
-	case strings.Contains(path, "/backups/"):
+	case strings.Contains(path, "/backup-schedules/"):
 		id = c.Registry.GetBackupSchedule()
+	case strings.Contains(path, "/backups/"):
+		id = c.Registry.GetBackup()
 	case strings.Contains(path, "/users/"):
 		id = c.Registry.GetUser()
 	default:

@@ -87,7 +87,13 @@ func webmailURLHandler(cfg RouterConfig) gin.HandlerFunc {
 
 		result := resp.Result.(map[string]interface{})
 		if !result["installed"].(bool) {
-			c.JSON(http.StatusBadRequest, fail("NOT_INSTALLED", "webmail is not installed"))
+			c.JSON(http.StatusOK, gin.H{
+				"success": true,
+				"data": gin.H{
+					"installed": false,
+					"message":   "webmail is not installed",
+				},
+			})
 			return
 		}
 

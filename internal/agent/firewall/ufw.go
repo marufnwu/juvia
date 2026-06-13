@@ -23,17 +23,21 @@ func HandleRuleCreate(ctx context.Context, params json.RawMessage) (interface{},
 		return nil, err
 	}
 
-	portWithProto := req.Port
+	port := strings.TrimSuffix(strings.TrimSuffix(req.Port, "/tcp"), "/udp")
+
+	portWithProto := port
 	if req.Protocol != "both" {
-		portWithProto = fmt.Sprintf("%s/%s", req.Port, req.Protocol)
+		portWithProto = fmt.Sprintf("%s/%s", port, req.Protocol)
 	}
 
 	var args []string
 	args = append(args, req.Action)
-	if req.Source != "any" {
-		args = append(args, "from", req.Source)
+
+	if req.Source != "any" && req.Source != "0.0.0.0/0" {
+		args = append(args, "from", req.Source, "to", "any", "port", portWithProto)
+	} else {
+		args = append(args, portWithProto)
 	}
-	args = append(args, "to", portWithProto)
 
 	cmd := exec.Command("ufw", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {
@@ -71,17 +75,21 @@ func HandleRuleUpdate(ctx context.Context, params json.RawMessage) (interface{},
 
 	deleteOldRule(req.OldPort, req.OldSource)
 
-	portWithProto := req.Port
+	port := strings.TrimSuffix(strings.TrimSuffix(req.Port, "/tcp"), "/udp")
+
+	portWithProto := port
 	if req.Protocol != "both" {
-		portWithProto = fmt.Sprintf("%s/%s", req.Port, req.Protocol)
+		portWithProto = fmt.Sprintf("%s/%s", port, req.Protocol)
 	}
 
 	var args []string
 	args = append(args, req.Action)
-	if req.Source != "any" {
-		args = append(args, "from", req.Source)
+
+	if req.Source != "any" && req.Source != "0.0.0.0/0" {
+		args = append(args, "from", req.Source, "to", "any", "port", portWithProto)
+	} else {
+		args = append(args, portWithProto)
 	}
-	args = append(args, "to", portWithProto)
 
 	cmd := exec.Command("ufw", args...)
 	if output, err := cmd.CombinedOutput(); err != nil {

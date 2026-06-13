@@ -83,8 +83,9 @@ func HandleDBUserCreate(ctx context.Context, params json.RawMessage) (interface{
 	}
 
 	if req.Engine == "mysql" {
+		// Use portable syntax (works on both MySQL and MariaDB)
 		cmd := exec.Command("mysql", "-e",
-			fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'%s' IDENTIFIED WITH caching_sha2_password BY '%s'; GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%s'; FLUSH PRIVILEGES;",
+			fmt.Sprintf("CREATE USER IF NOT EXISTS '%s'@'%s' IDENTIFIED BY '%s'; GRANT ALL PRIVILEGES ON %s.* TO '%s'@'%s'; FLUSH PRIVILEGES;",
 				req.Username, req.Host, req.Password, req.Name, req.Username, req.Host))
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return nil, fmt.Errorf("mysql user create: %w: %s", err, string(output))
