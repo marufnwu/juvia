@@ -406,6 +406,7 @@ func (c *APIClient) Run(destructive bool) ([]Result, error) {
 				case "user":
 					c.Registry.AddUser(id)
 				case "backup":
+					c.Registry.AddBackup(id)
 				case "database-user":
 					c.Registry.AddDatabaseUser(c.Registry.GetDatabase(), id)
 				}

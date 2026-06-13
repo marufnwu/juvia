@@ -15,6 +15,7 @@ type ResourceRegistry struct {
 	FirewallRules   []int64
 	CronJobs        []int64
 	BackupSchedules []int64
+	Backups         []int64
 	DNSRecords      []int64
 }
 
@@ -187,4 +188,19 @@ func (r *ResourceRegistry) GetUser() int64 {
 		return 0
 	}
 	return r.Users[0]
+}
+
+func (r *ResourceRegistry) AddBackup(id int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.Backups = append(r.Backups, id)
+}
+
+func (r *ResourceRegistry) GetBackup() int64 {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.Backups) == 0 {
+		return 0
+	}
+	return r.Backups[0]
 }
