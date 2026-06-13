@@ -88,12 +88,20 @@ func issueSSLHandler(cfg RouterConfig) gin.HandlerFunc {
 		tasks.NewRunner(cfg.DB.DB, cfg.Log).CompleteTask(c.Request.Context(), task.TaskID, `{}`)
 		cfg.DB.LogAudit(c.Request.Context(), &userID, "Issued SSL certificate for "+website.Domain, c.ClientIP(), c.Request.UserAgent(), "")
 
+		data := gin.H{
+			"message": "SSL certificate issued",
+			"expiry":  expiryVal,
+		}
+		if certType, ok := resultMap["cert_type"].(string); ok {
+			data["cert_type"] = certType
+		}
+		if warning, ok := resultMap["warning"].(string); ok {
+			data["warning"] = warning
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"data": gin.H{
-				"message": "SSL certificate issued",
-				"expiry":  expiryVal,
-			},
+			"data":    data,
 		})
 	}
 }
@@ -143,12 +151,20 @@ func renewSSLHandler(cfg RouterConfig) gin.HandlerFunc {
 		tasks.NewRunner(cfg.DB.DB, cfg.Log).CompleteTask(c.Request.Context(), task.TaskID, `{}`)
 		cfg.DB.LogAudit(c.Request.Context(), &userID, "Renewed SSL certificate for "+website.Domain, c.ClientIP(), c.Request.UserAgent(), "")
 
+		data := gin.H{
+			"message": "SSL certificate renewed",
+			"expiry":  expiryVal,
+		}
+		if certType, ok := resultMap["cert_type"].(string); ok {
+			data["cert_type"] = certType
+		}
+		if warning, ok := resultMap["warning"].(string); ok {
+			data["warning"] = warning
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"data": gin.H{
-				"message": "SSL certificate renewed",
-				"expiry":  expiryVal,
-			},
+			"data":    data,
 		})
 	}
 }

@@ -29,8 +29,21 @@ func HandleTerminalStart(ctx context.Context, params json.RawMessage) (interface
 		StartTime: time.Now(),
 	}
 
+	recordingsDir := "/var/log/juvia/terminal"
+	os.MkdirAll(recordingsDir, 0755)
+
+	filename := sessionID + ".cast"
+	recordingPath := filepath.Join(recordingsDir, filename)
+
+	f, err := os.Create(recordingPath)
+	if err == nil {
+		f.Close()
+		os.Chmod(recordingPath, 0644)
+	}
+
 	return map[string]interface{}{
 		"session_id": sessionID,
+		"recording":  filename,
 	}, nil
 }
 
@@ -42,13 +55,23 @@ func HandleTerminalStop(ctx context.Context, params json.RawMessage) (interface{
 		return nil, fmt.Errorf("invalid params: %w", err)
 	}
 
+	var recordingFilename string
 	if sess, ok := activeSessions[req.SessionID]; ok {
 		sess.StopTime = time.Now()
 		delete(activeSessions, req.SessionID)
 	}
 
+	recordingsDir := "/var/log/juvia/terminal"
+	filename := req.SessionID + ".cast"
+	recordingPath := filepath.Join(recordingsDir, filename)
+
+	if _, err := os.Stat(recordingPath); err == nil {
+		recordingFilename = filename
+	}
+
 	return map[string]interface{}{
-		"stopped": true,
+		"stopped":   true,
+		"recording": recordingFilename,
 	}, nil
 }
 

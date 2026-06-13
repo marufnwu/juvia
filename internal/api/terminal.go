@@ -38,12 +38,16 @@ func createTerminalSessionHandler(cfg RouterConfig) gin.HandlerFunc {
 
 		result := resp.Result.(map[string]interface{})
 		sessionID, _ := result["session_id"].(string)
+		recording, _ := result["recording"].(string)
+
+		data := gin.H{"session_id": sessionID}
+		if recording != "" {
+			data["recording"] = recording
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"data": gin.H{
-				"session_id": sessionID,
-			},
+			"data":    data,
 		})
 	}
 }
@@ -61,13 +65,22 @@ func closeTerminalSessionHandler(cfg RouterConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		sessionID := c.Param("id")
 
-		cfg.AgentClient.Call(c.Request.Context(), "terminal.stop", map[string]interface{}{
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "terminal.stop", map[string]interface{}{
 			"session_id": sessionID,
 		})
 
+		data := gin.H{"message": "session closed"}
+		if err == nil && resp != nil && resp.Error == nil {
+			if result, ok := resp.Result.(map[string]interface{}); ok {
+				if recording, ok := result["recording"].(string); ok && recording != "" {
+					data["recording"] = recording
+				}
+			}
+		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"data":    gin.H{"message": "session closed"},
+			"data":    data,
 		})
 	}
 }

@@ -233,10 +233,38 @@ func (c *APIClient) extractDomain(body string) string {
 	return ""
 }
 
+func (c *APIClient) extractStringField(body string, field string) string {
+	var data map[string]interface{}
+	if err := json.Unmarshal([]byte(body), &data); err != nil {
+		return ""
+	}
+	if d, ok := data["data"].(map[string]interface{}); ok {
+		if val, ok := d[field].(string); ok {
+			return val
+		}
+	}
+	return ""
+}
+
 func (c *APIClient) ResolvePath(path string) string {
 	result := path
 
-	// Determine which resource :id refers to based on path pattern
+	if strings.HasPrefix(path, "/api/v1/terminal/recordings/") {
+		sessionID := c.Registry.GetTerminalSession()
+		if sessionID != "" {
+			result = strings.ReplaceAll(result, ":id", sessionID+".cast")
+		}
+		return result
+	}
+
+	if strings.HasPrefix(path, "/api/v1/terminal/sessions/") {
+		sessionID := c.Registry.GetTerminalSession()
+		if sessionID != "" {
+			result = strings.ReplaceAll(result, ":id", sessionID)
+		}
+		return result
+	}
+
 	var id int64
 	switch {
 	case strings.Contains(path, "/dns/records/"):
@@ -253,9 +281,9 @@ func (c *APIClient) ResolvePath(path string) string {
 		id = c.Registry.GetFirewallRule()
 	case strings.Contains(path, "/cron/"):
 		id = c.Registry.GetCronJob()
-	case strings.Contains(path, "/backup-schedules/"):
+	case strings.HasPrefix(path, "/api/v1/backup-schedules/"):
 		id = c.Registry.GetBackupSchedule()
-	case strings.Contains(path, "/backups/"):
+	case strings.HasPrefix(path, "/api/v1/backups/"):
 		id = c.Registry.GetBackup()
 	case strings.Contains(path, "/users/"):
 		id = c.Registry.GetUser()
@@ -380,9 +408,18 @@ func (c *APIClient) Run(destructive bool) ([]Result, error) {
 		result.Phase = string(ep.Phase)
 		result.Category = c.getCategory(ep.Path)
 
+		if len(ep.ExpectedStatuses) > 0 {
+			for _, expected := range ep.ExpectedStatuses {
+				if result.Status == expected {
+					result.Success = true
+					break
+				}
+			}
+		}
+
 		if result.Success && ep.ResourceType != "" && (ep.Phase == PhaseAnytime || ep.Phase == PhaseAfterCreate) {
 			id := c.extractID(result.Body)
-			if id > 0 {
+			if id > 0 || ep.ResourceType == "terminal-session" || ep.ResourceType == "terminal-recording" {
 				switch ep.ResourceType {
 				case "website":
 					c.Registry.AddWebsite(id)
@@ -411,6 +448,16 @@ func (c *APIClient) Run(destructive bool) ([]Result, error) {
 					c.Registry.AddBackup(id)
 				case "database-user":
 					c.Registry.AddDatabaseUser(c.Registry.GetDatabase(), id)
+				case "terminal-session":
+					sessionID := c.extractStringField(result.Body, "session_id")
+					if sessionID != "" {
+						c.Registry.AddTerminalSession(sessionID)
+					}
+				case "terminal-recording":
+					recordingID := c.extractStringField(result.Body, "recording")
+					if recordingID != "" {
+						c.Registry.AddTerminalSession(recordingID)
+					}
 				}
 			}
 		}

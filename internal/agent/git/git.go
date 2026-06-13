@@ -31,16 +31,32 @@ func HandleGitSetup(ctx context.Context, params json.RawMessage) (interface{}, e
 		req.Branch = "main"
 	}
 
+	tmpDir, err := os.MkdirTemp("/tmp", "juvia-git-clone-")
+	if err != nil {
+		return nil, fmt.Errorf("create temp dir: %w", err)
+	}
+	defer os.RemoveAll(tmpDir)
+
 	var cmd *exec.Cmd
 	if req.DeployKey != "" {
-		cmd = exec.Command("git", "clone", "-b", req.Branch, "--single-branch", req.RepoURL, req.WebsitePath)
+		cmd = exec.Command("git", "clone", "-b", req.Branch, "--single-branch", req.RepoURL, tmpDir)
 	} else {
-		cmd = exec.Command("git", "clone", "-b", req.Branch, "--single-branch", req.RepoURL, req.WebsitePath)
+		cmd = exec.Command("git", "clone", "-b", req.Branch, "--single-branch", req.RepoURL, tmpDir)
 	}
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("git clone failed: %w: %s", err, string(output))
+	}
+
+	files, err := os.ReadDir(tmpDir)
+	if err != nil {
+		return nil, fmt.Errorf("read temp dir: %w", err)
+	}
+	for _, f := range files {
+		src := filepath.Join(tmpDir, f.Name())
+		dst := filepath.Join(req.WebsitePath, f.Name())
+		os.Rename(src, dst)
 	}
 
 	cmd = exec.Command("chown", "-R", "www-data:www-data", req.WebsitePath)

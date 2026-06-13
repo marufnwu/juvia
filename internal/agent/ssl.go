@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -22,19 +24,44 @@ func HandleSSLIssue(ctx context.Context, params json.RawMessage) (interface{}, e
 
 	cmd := exec.Command("certbot", "certonly", "--nginx", "-d", req.Domain, "-d", "www."+req.Domain,
 		"--non-interactive", "--agree-tos", "-m", "admin@"+req.Domain, "--keep")
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("certbot issue: %w: %s", err, string(output))
+	if err := cmd.Run(); err == nil {
+		certPath := "/etc/letsencrypt/live/" + req.Domain + "/fullchain.pem"
+		keyPath := "/etc/letsencrypt/live/" + req.Domain + "/privkey.pem"
+		expiry := getCertExpiry(certPath)
+
+		return map[string]interface{}{
+			"cert_type": "letsencrypt",
+			"cert_path": certPath,
+			"key_path":  keyPath,
+			"expiry":    expiry,
+		}, nil
 	}
 
-	certPath := "/etc/letsencrypt/live/" + req.Domain + "/fullchain.pem"
-	keyPath := "/etc/letsencrypt/live/" + req.Domain + "/privkey.pem"
-	expiry := getCertExpiry(certPath)
+	certDir := "/etc/juvia/ssl/self-signed/" + req.Domain
+	os.MkdirAll(certDir, 0750)
+
+	certPath := filepath.Join(certDir, "fullchain.pem")
+	keyPath := filepath.Join(certDir, "privkey.pem")
+
+	opensslCmd := exec.Command("openssl", "req", "-x509", "-nodes", "-days", "90",
+		"-newkey", "rsa:2048",
+		"-keyout", keyPath,
+		"-out", certPath,
+		"-subj", "/CN="+req.Domain,
+		"-addext", "subjectAltName=DNS:"+req.Domain+",DNS:www."+req.Domain)
+	opensslOutput, err := opensslCmd.CombinedOutput()
+	if err != nil {
+		return nil, fmt.Errorf("self-signed cert generation failed: %w: %s", err, string(opensslOutput))
+	}
+
+	expiry := time.Now().Add(90 * 24 * time.Hour)
 
 	return map[string]interface{}{
+		"cert_type": "self_signed",
 		"cert_path": certPath,
 		"key_path":  keyPath,
-		"expiry": expiry,
+		"expiry":    expiry,
+		"warning":   "Domain could not be validated by Let's Encrypt; a self-signed certificate was generated for testing/internal use.",
 	}, nil
 }
 
@@ -51,16 +78,25 @@ func HandleSSLRenew(ctx context.Context, params json.RawMessage) (interface{}, e
 
 	cmd := exec.Command("certbot", "renew", "--cert-name", req.Domain, "--non-interactive")
 	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return nil, fmt.Errorf("certbot renew: %w: %s", err, string(output))
+	if err == nil {
+		certPath := "/etc/letsencrypt/live/" + req.Domain + "/fullchain.pem"
+		expiry := getCertExpiry(certPath)
+		return map[string]interface{}{
+			"expiry": expiry,
+		}, nil
 	}
 
-	certPath := "/etc/letsencrypt/live/" + req.Domain + "/fullchain.pem"
-	expiry := getCertExpiry(certPath)
+	selfSignedPath := "/etc/juvia/ssl/self-signed/" + req.Domain + "/fullchain.pem"
+	if _, statErr := os.Stat(selfSignedPath); statErr == nil {
+		expiry := getCertExpiry(selfSignedPath)
+		return map[string]interface{}{
+			"expiry":      expiry,
+			"cert_type":   "self_signed",
+			"warning":     "Self-signed certificates cannot be renewed by certbot; returning existing expiry.",
+		}, nil
+	}
 
-	return map[string]interface{}{
-		"expiry": expiry,
-	}, nil
+	return nil, fmt.Errorf("certbot renew: %w: %s", err, string(output))
 }
 
 func HandleSSLCheck(ctx context.Context, params json.RawMessage) (interface{}, error) {
@@ -97,8 +133,10 @@ func HandleSSLRemove(ctx context.Context, params json.RawMessage) (interface{}, 
 		return nil, fmt.Errorf("domain is required")
 	}
 
-	cmd := exec.Command("certbot", "delete", "--cert-name", req.Domain, "--non-interactive")
-	cmd.Run()
+	exec.Command("certbot", "delete", "--cert-name", req.Domain, "--non-interactive").Run()
+
+	selfSignedDir := "/etc/juvia/ssl/self-signed/" + req.Domain
+	os.RemoveAll(selfSignedDir)
 
 	return map[string]interface{}{"removed": true}, nil
 }

@@ -351,6 +351,29 @@ chmod 770 /var/log/juvia/terminal
 chown -R juvia:juvia /var/backups/juvia
 chmod 755 /var/backups/juvia
 
+echo ""
+echo "Setting up git test repository for API testing..."
+mkdir -p /var/lib/juvia/test-repo.git
+if [ ! -d /var/lib/juvia/test-repo.git/git-daemon-export-ok ]; then
+    git init --bare /var/lib/juvia/test-repo.git 2>/dev/null || true
+    touch /var/lib/juvia/test-repo.git/git-daemon-export-ok
+    # Seed the repo with an initial commit so main branch exists
+    TEMP_CLONE=$(mktemp -d)
+    git clone /var/lib/juvia/test-repo.git "$TEMP_CLONE" 2>/dev/null || true
+    if [ -d "$TEMP_CLONE/.git" ]; then
+        git -C "$TEMP_CLONE" config user.email "test@juvia.local" 2>/dev/null || true
+        git -C "$TEMP_CLONE" config user.name "Juvia Test" 2>/dev/null || true
+        echo "# Juvia Test Repository" > "$TEMP_CLONE/README.md"
+        git -C "$TEMP_CLONE" add README.md 2>/dev/null || true
+        git -C "$TEMP_CLONE" commit -m "Initial commit" 2>/dev/null || true
+        git -C "$TEMP_CLONE" branch -M main 2>/dev/null || true
+        git -C "$TEMP_CLONE" push -u origin main 2>/dev/null || true
+    fi
+    rm -rf "$TEMP_CLONE"
+fi
+chown -R juvia:juvia /var/lib/juvia/test-repo.git
+chmod -R 755 /var/lib/juvia/test-repo.git
+
 if [ -d /etc/nginx/sites-enabled ]; then
     chown root:www-data /etc/nginx/sites-enabled
     chmod 755 /etc/nginx/sites-enabled

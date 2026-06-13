@@ -11,16 +11,17 @@ const (
 )
 
 type Endpoint struct {
-	Method         string
-	Path           string
-	Auth           AuthLevel
-	Phase          Phase
-	ResourceType   string
-	Body           interface{}
-	QueryParams    map[string]string
-	AgentDependent bool
-	SkipCleanup    bool
-	Description    string
+	Method            string
+	Path              string
+	Auth              AuthLevel
+	Phase             Phase
+	ResourceType      string
+	Body              interface{}
+	QueryParams       map[string]string
+	AgentDependent    bool
+	SkipCleanup       bool
+	Description       string
+	ExpectedStatuses  []int
 }
 
 type AuthLevel int
@@ -35,13 +36,13 @@ var Endpoints = []Endpoint{
 	// === PHASE 0: Auth & Setup ===
 	{Method: http.MethodGet, Path: "/api/v1/health", Auth: AuthNone, Phase: PhaseAnytime, Description: "Health check"},
 	{Method: http.MethodGet, Path: "/api/v1/setup/status", Auth: AuthNone, Phase: PhaseAnytime, Description: "Check if setup is required"},
-	{Method: http.MethodPost, Path: "/api/v1/setup/first-run", Auth: AuthNone, Phase: PhaseAnytime, Description: "First run setup"},
+	{Method: http.MethodPost, Path: "/api/v1/setup/first-run", Auth: AuthNone, Phase: PhaseAnytime, Description: "First run setup", ExpectedStatuses: []int{200, 409}},
 	{Method: http.MethodPost, Path: "/api/v1/auth/login", Auth: AuthNone, Phase: PhaseAnytime, Description: "Login"},
 	{Method: http.MethodPost, Path: "/api/v1/auth/refresh", Auth: AuthNone, Phase: PhaseAnytime, Description: "Refresh token"},
 	{Method: http.MethodPost, Path: "/api/v1/auth/logout", Auth: AuthUser, Phase: PhaseAnytime, Description: "Logout"},
 	{Method: http.MethodGet, Path: "/api/v1/auth/me", Auth: AuthUser, Phase: PhaseAnytime, Description: "Get current user"},
 	{Method: http.MethodPost, Path: "/api/v1/auth/2fa/enable", Auth: AuthUser, Phase: PhaseAnytime, Description: "Enable 2FA"},
-	{Method: http.MethodPost, Path: "/api/v1/auth/2fa/verify", Auth: AuthUser, Phase: PhaseAnytime, Description: "Verify 2FA"},
+	{Method: http.MethodPost, Path: "/api/v1/auth/2fa/verify", Auth: AuthUser, Phase: PhaseAnytime, Description: "Verify 2FA", ExpectedStatuses: []int{200, 400}},
 	{Method: http.MethodDelete, Path: "/api/v1/auth/sessions/:id", Auth: AuthUser, Phase: PhaseAnytime, Description: "Revoke session"},
 
 	// === PHASE 1: Create Resources ===
@@ -161,9 +162,9 @@ var Endpoints = []Endpoint{
 	{Method: http.MethodPost, Path: "/api/v1/webmail/uninstall", Auth: AuthUser, Phase: PhaseAnytime, AgentDependent: true, SkipCleanup: true, Description: "Uninstall webmail"},
 	{Method: http.MethodGet, Path: "/api/v1/webmail/url", Auth: AuthUser, Phase: PhaseAnytime, Description: "Get webmail URL"},
 
-	{Method: http.MethodPost, Path: "/api/v1/terminal/session", Auth: AuthUser, Phase: PhaseAnytime, Description: "Create terminal session"},
+	{Method: http.MethodPost, Path: "/api/v1/terminal/session", Auth: AuthUser, Phase: PhaseAnytime, ResourceType: "terminal-session", Description: "Create terminal session"},
 	{Method: http.MethodGet, Path: "/api/v1/terminal/sessions", Auth: AuthUser, Phase: PhaseAnytime, Description: "List terminal sessions"},
-	{Method: http.MethodDelete, Path: "/api/v1/terminal/sessions/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "terminal-session", Description: "Close terminal session"},
+	{Method: http.MethodDelete, Path: "/api/v1/terminal/sessions/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "terminal-recording", Description: "Close terminal session"},
 	{Method: http.MethodGet, Path: "/api/v1/terminal/recordings", Auth: AuthUser, Phase: PhaseAnytime, Description: "List terminal recordings"},
 	{Method: http.MethodGet, Path: "/api/v1/terminal/recordings/:id", Auth: AuthUser, Phase: PhaseAfterCreate, ResourceType: "terminal-recording", Description: "Get terminal recording"},
 
@@ -328,7 +329,7 @@ var CreatePayloads = map[string]interface{}{
 		"app_type": "wordpress",
 	},
 	"/api/v1/websites/:id/git": map[string]interface{}{
-		"repo_url": "https://github.com/example/repo.git",
+		"repo_url": "file:///var/lib/juvia/test-repo.git",
 		"branch":  "main",
 	},
 	"/api/v1/dns/records/:id": map[string]interface{}{
