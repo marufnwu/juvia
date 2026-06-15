@@ -1,8 +1,10 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -30,7 +32,13 @@ func getSettingsHandler(cfg RouterConfig) gin.HandlerFunc {
 			"alert_website_down_enabled",
 			"alert_disk_usage_threshold",
 			"alert_ssl_expiry_days",
-		}
+		"ssh_port",
+		"ssh_root_login",
+		"server_ip",
+		"ns_brand_domain",
+		"ns1_hostname",
+		"ns2_hostname",
+	}
 
 		for _, key := range keys {
 			value, err := cfg.DB.GetSetting(c.Request.Context(), key)
@@ -56,10 +64,46 @@ func updateSettingsHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		// Check if nameserver settings are being updated
+		nsKeys := map[string]bool{"ns_brand_domain": true, "ns1_hostname": true, "ns2_hostname": true}
+		nsUpdate := false
+		for key := range settings {
+			if nsKeys[key] {
+				nsUpdate = true
+				break
+			}
+		}
+
 		for key, value := range settings {
+			if err := validateSetting(key, value); err != nil {
+				c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", err.Error()))
+				return
+			}
 			if err := cfg.DB.SetSetting(c.Request.Context(), key, value); err != nil {
 				c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 				return
+			}
+		}
+
+		// If nameserver settings were updated, set up the brand DNS zone
+		if nsUpdate {
+			brandDomain, _ := cfg.DB.GetSetting(c.Request.Context(), "ns_brand_domain")
+			if brandDomain != "" {
+				ns1Hostname, _ := cfg.DB.GetSetting(c.Request.Context(), "ns1_hostname")
+				ns2Hostname, _ := cfg.DB.GetSetting(c.Request.Context(), "ns2_hostname")
+				serverIP, _ := cfg.DB.GetSetting(c.Request.Context(), "server_ip")
+
+				resp, err := cfg.AgentClient.Call(c.Request.Context(), "dns.brand.setup", map[string]interface{}{
+					"brand_domain": brandDomain,
+					"ns1_hostname": ns1Hostname,
+					"ns2_hostname": ns2Hostname,
+					"server_ip":    serverIP,
+				})
+				if err != nil {
+					cfg.Log.WarnContext(c.Request.Context(), "dns.brand.setup failed: "+err.Error())
+				} else if resp.Error != nil {
+					cfg.Log.WarnContext(c.Request.Context(), "dns.brand.setup agent error: "+resp.Error.Message)
+				}
 			}
 		}
 
@@ -104,9 +148,56 @@ func getAuditLogHandler(cfg RouterConfig) gin.HandlerFunc {
 	}
 }
 
+func validateSetting(key, value string) error {
+	if value == "" {
+		return nil
+	}
+	switch key {
+	case "ns1_hostname", "ns2_hostname":
+		value = strings.TrimSuffix(value, ".")
+		if len(value) > 253 {
+			return fmt.Errorf("%s is too long (max 253 characters)", key)
+		}
+		labels := strings.Split(value, ".")
+		if len(labels) < 2 {
+			return fmt.Errorf("%s must be a valid hostname (e.g. ns1.example.com)", key)
+		}
+		for _, label := range labels {
+			if len(label) == 0 || len(label) > 63 {
+				return fmt.Errorf("%s has invalid label length", key)
+			}
+			for _, ch := range label {
+				if !((ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') || ch == '-') {
+					return fmt.Errorf("%s contains invalid character '%c'", key, ch)
+				}
+			}
+		}
+	case "ns_brand_domain":
+		value = strings.TrimSuffix(value, ".")
+		if len(value) > 253 {
+			return fmt.Errorf("brand domain is too long")
+		}
+		labels := strings.Split(value, ".")
+		if len(labels) < 2 {
+			return fmt.Errorf("brand domain must be a valid domain (e.g. example.com)")
+		}
+		for _, label := range labels {
+			if len(label) == 0 || len(label) > 63 {
+				return fmt.Errorf("brand domain has invalid label length")
+			}
+		}
+	case "panel_port":
+		port, err := strconv.Atoi(value)
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("panel_port must be a valid port number (1-65535)")
+		}
+	}
+	return nil
+}
+
 func exportConfigHandler(cfg RouterConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		websites, _ := cfg.DB.ListWebsites(c.Request.Context(), "", "", "domain", "asc", 1, 1000)
+		websites, _ := cfg.DB.ListWebsites(c.Request.Context(), "", "", "domain", "asc", 1, 1000, 0)
 		databases, _ := cfg.DB.ListDatabases(c.Request.Context(), "", 1, 100)
 		mailboxes, _ := cfg.DB.ListMailboxes(c.Request.Context(), "", 1, 100)
 		firewallRules, _ := cfg.DB.ListFirewallRules(c.Request.Context(), 1, 100)

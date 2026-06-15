@@ -57,11 +57,16 @@ type Website struct {
 
 // Domain represents an additional domain for a website.
 type Domain struct {
-	ID        int64     `json:"id" db:"id"`
-	WebsiteID int64     `json:"website_id" db:"website_id"`
-	Domain    string    `json:"domain" db:"domain"`
-	Type      string    `json:"type" db:"type"`
-	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	ID           int64      `json:"id" db:"id"`
+	WebsiteID    int64      `json:"website_id" db:"website_id"`
+	Domain       string     `json:"domain" db:"domain"`
+	Type         string     `json:"type" db:"type"`
+	SSLEnabled   bool       `json:"ssl_enabled" db:"ssl_enabled"`
+	SSLExpiry    *time.Time `json:"ssl_expiry,omitempty" db:"ssl_expiry"`
+	SSLCertType  string     `json:"ssl_cert_type,omitempty" db:"ssl_cert_type"`
+	SSLCertPath  string     `json:"ssl_cert_path,omitempty" db:"ssl_cert_path"`
+	SSLKeyPath   string     `json:"ssl_key_path,omitempty" db:"ssl_key_path"`
+	CreatedAt    time.Time  `json:"created_at" db:"created_at"`
 }
 
 // Zone represents a DNS zone.
@@ -82,6 +87,7 @@ type DNSRecord struct {
 	Name      string    `json:"name" db:"name"`
 	Value     string    `json:"value" db:"value"`
 	Priority  *int      `json:"priority,omitempty" db:"priority"`
+	TTL       int       `json:"ttl" db:"ttl"`
 	CreatedAt time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }

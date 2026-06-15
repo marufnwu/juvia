@@ -1,10 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { ArrowLeft, Globe, Database, Lock, Check, AlertTriangle } from 'lucide-react'
+import { ArrowLeft, Globe, Database, Lock, Check, AlertTriangle, Server, Copy } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { PageHeader } from '../../components/ui/Misc'
+import { Modal } from '../../components/ui/Modal'
 import api from '../../lib/api'
+import { Input, Switch } from '../../components/ui/Input'
 import { cn } from '../../lib/utils'
 
 export default function CreateWebsite() {
@@ -12,6 +14,31 @@ export default function CreateWebsite() {
   const [step, setStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [createdWebsite, setCreatedWebsite] = useState<{ id: number; domain: string } | null>(null)
+  const [serverIP, setServerIP] = useState('')
+  const [nameservers, setNameservers] = useState<string[]>([])
+
+  useEffect(() => {
+    loadNetworkInfo()
+  }, [])
+
+  const loadNetworkInfo = async () => {
+    try {
+      const [ipRes, nsRes] = await Promise.allSettled([
+        api.get('/server/ip'),
+        api.get('/dns/nameservers'),
+      ])
+      if (ipRes.status === 'fulfilled') {
+        setServerIP(ipRes.value.data.data?.ip || '')
+      }
+      if (nsRes.status === 'fulfilled') {
+        const nsData = nsRes.value.data.data
+        setNameservers([nsData?.ns1_hostname, nsData?.ns2_hostname].filter(Boolean))
+      }
+    } catch {
+      // ignore
+    }
+  }
   const [formData, setFormData] = useState({
     domain: '',
     php_version: '8.2',
@@ -54,7 +81,8 @@ export default function CreateWebsite() {
 
       if (res.data.success) {
         const websiteId = res.data.data?.id || res.data.data?.website?.id
-        navigate(`/websites/${websiteId}`)
+        const domain = res.data.data?.domain || res.data.data?.website?.domain || formData.domain
+        setCreatedWebsite({ id: websiteId, domain })
       }
     } catch (err: any) {
       setError(err.response?.data?.error?.user_message || 'Failed to create website')
@@ -123,8 +151,8 @@ export default function CreateWebsite() {
         {step === 1 && (
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1.5">Domain Name</label>
-              <input
+              <label className="block text-sm font-medium mb-1.5">Domain Name · Your website address (e.g. example.com)</label>
+              <Input
                 type="text"
                 value={formData.domain}
                 onChange={(e) => {
@@ -132,10 +160,7 @@ export default function CreateWebsite() {
                   if (validation.errors.length) validateDomain(e.target.value)
                 }}
                 placeholder="example.com"
-                className={cn(
-                  'w-full h-10 px-3 bg-background border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50',
-                  validation.errors.length ? 'border-danger' : 'border-border'
-                )}
+                error={validation.errors.length > 0}
                 autoFocus
               />
               <p className="text-xs text-text-secondary mt-1.5">
@@ -151,13 +176,12 @@ export default function CreateWebsite() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1.5">Document Root (optional)</label>
-              <input
+              <label className="block text-sm font-medium mb-1.5">Document Root · Where website files are stored</label>
+              <Input
                 type="text"
                 value={formData.document_root}
                 onChange={(e) => setFormData({ ...formData, document_root: e.target.value })}
                 placeholder="/public_html"
-                className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
               />
               <p className="text-xs text-text-secondary mt-1.5">
                 Leave empty to use default public_html
@@ -173,7 +197,7 @@ export default function CreateWebsite() {
         {step === 2 && (
           <div className="space-y-6">
             <div>
-              <label className="block text-sm font-medium mb-3">Web Server</label>
+              <label className="block text-sm font-medium mb-3">Web Server · Software serving pages</label>
               <div className="grid grid-cols-2 gap-3">
                 {['nginx', 'apache'].map((server) => (
                   <button
@@ -194,7 +218,7 @@ export default function CreateWebsite() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-3">PHP Version</label>
+              <label className="block text-sm font-medium mb-3">PHP Version · The language your code runs on</label>
               <div className="grid grid-cols-4 gap-2">
                 {['8.3', '8.2', '8.1', '8.0'].map((version) => (
                   <button
@@ -212,7 +236,7 @@ export default function CreateWebsite() {
                 ))}
               </div>
               <p className="text-xs text-text-secondary mt-2">
-                PHP-FPM pool will be created with the selected version
+                PHP-FPM · Runs PHP code efficiently
               </p>
             </div>
 
@@ -225,35 +249,17 @@ export default function CreateWebsite() {
 
         {step === 3 && (
           <div className="space-y-6">
-            <div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.enable_ssl}
-                  onChange={(e) => setFormData({ ...formData, enable_ssl: e.target.checked })}
-                  className="w-4 h-4 rounded border-border"
-                />
-                <div>
-                  <span className="font-medium">Enable SSL</span>
-                  <p className="text-xs text-text-secondary">Issue a free Let's Encrypt certificate</p>
-                </div>
-              </label>
-            </div>
+            <Switch
+              checked={formData.enable_ssl}
+              onChange={(e) => setFormData({ ...formData, enable_ssl: e.target.checked })}
+              label="Enable SSL · Add security certificate for HTTPS"
+            />
 
-            <div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.create_database}
-                  onChange={(e) => setFormData({ ...formData, create_database: e.target.checked })}
-                  className="w-4 h-4 rounded border-border"
-                />
-                <div>
-                  <span className="font-medium">Create Database</span>
-                  <p className="text-xs text-text-secondary">Create a MySQL database for this website</p>
-                </div>
-              </label>
-            </div>
+            <Switch
+              checked={formData.create_database}
+              onChange={(e) => setFormData({ ...formData, create_database: e.target.checked })}
+              label="Create Database"
+            />
 
             <div className="flex gap-3">
               <Button variant="outline" onClick={() => setStep(2)}>Back</Button>
@@ -302,6 +308,56 @@ export default function CreateWebsite() {
           </div>
         )}
       </Card>
+
+      {createdWebsite && (
+        <Modal open={!!createdWebsite} onClose={() => navigate(`/websites/${createdWebsite.id}`)} title="Website Created" size="lg">
+          <div className="space-y-5">
+            <div className="p-4 bg-success/10 border border-success/20 rounded flex items-center gap-3">
+              <Check className="w-5 h-5 text-success flex-shrink-0" />
+              <div>
+                <p className="font-medium text-foreground">{createdWebsite.domain} is ready</p>
+                <p className="text-sm text-text-secondary">Your website has been created on the server.</p>
+              </div>
+            </div>
+
+            {serverIP && (
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium flex items-center gap-2">
+                  <Server className="w-4 h-4" />
+                  Point your domain to this server
+                </h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <p className="text-sm text-text-secondary">A Record for @</p>
+                    <div className="flex items-center gap-2">
+                      <code className="px-2 py-1 bg-accent rounded text-sm font-mono flex-1">{serverIP}</code>
+                      <Button variant="ghost" size="sm" onClick={() => navigator.clipboard.writeText(serverIP)}>
+                        <Copy className="w-3.5 h-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  {nameservers.length > 0 && (
+                    <div className="space-y-1">
+                      <p className="text-sm text-text-secondary">Or use nameservers</p>
+                      <div className="flex flex-wrap gap-2">
+                        {nameservers.map((ns) => (
+                          <code key={ns} className="px-2 py-1 bg-accent rounded text-sm font-mono">{ns}</code>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end gap-3 pt-2">
+              <Link to={`/websites/${createdWebsite.id}`}>
+                <Button>Go to Website</Button>
+              </Link>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   )
 }

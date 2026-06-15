@@ -4,13 +4,18 @@ import { Card, CardHeader, CardTitle, CardDescription } from '../../components/u
 import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import { PageHeader } from '../../components/ui/Misc'
+import { ConfirmModal } from '../../components/ui/Modal'
 import api from '../../lib/api'
 import { cn } from '../../lib/utils'
+import { useApiError } from '../../hooks/useToast'
 
 export default function Webmail() {
+  const showError = useApiError()
   const [status, setStatus] = useState<'installed' | 'not_installed' | 'installing'>('not_installed')
   const [webmailUrl, setWebmailUrl] = useState('')
   const [loading, setLoading] = useState(true)
+  const [confirmUninstall, setConfirmUninstall] = useState(false)
+  const [uninstalling, setUninstalling] = useState(false)
 
   useEffect(() => {
     loadStatus()
@@ -34,18 +39,25 @@ export default function Webmail() {
       await api.post('/webmail/install')
       loadStatus()
     } catch (err: any) {
-      alert(err.response?.data?.error?.user_message || 'Failed to install')
+      showError(err, 'Failed to install')
       setStatus('not_installed')
     }
   }
 
-  const handleUninstall = async () => {
-    if (!confirm('Uninstall webmail?')) return
+  const handleUninstall = () => {
+    setConfirmUninstall(true)
+  }
+
+  const doUninstall = async () => {
+    setConfirmUninstall(false)
+    setUninstalling(true)
     try {
       await api.post('/webmail/uninstall')
       loadStatus()
     } catch (err: any) {
-      alert(err.response?.data?.error?.user_message || 'Failed to uninstall')
+      showError(err, 'Failed to uninstall')
+    } finally {
+      setUninstalling(false)
     }
   }
 
@@ -150,6 +162,17 @@ export default function Webmail() {
           </Card>
         </div>
       )}
+
+      <ConfirmModal
+        open={confirmUninstall}
+        onClose={() => setConfirmUninstall(false)}
+        onConfirm={doUninstall}
+        title="Uninstall Webmail"
+        description="Remove the browser-based email client (Roundcube)? This cannot be undone."
+        confirmLabel="Uninstall"
+        variant="danger"
+        loading={uninstalling}
+      />
     </div>
   )
 }

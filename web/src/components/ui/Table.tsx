@@ -1,5 +1,26 @@
+import React from 'react'
 import { cn } from '../../lib/utils'
 import { ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+
+export function TableHeader({ children, className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
+  return <thead className={cn('bg-accent/50', className)} {...props}>{children}</thead>
+}
+
+export function TableBody({ children, className, ...props }: React.HTMLAttributes<HTMLTableSectionElement>) {
+  return <tbody className={cn('divide-y divide-border', className)} {...props}>{children}</tbody>
+}
+
+export function TableRow({ children, className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) {
+  return <tr className={cn('hover:bg-accent/30 transition-colors', className)} {...props}>{children}</tr>
+}
+
+export function TableHead({ children, className, ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) {
+  return <th className={cn('text-left p-3 text-xs font-medium text-text-secondary uppercase tracking-wider', className)} {...props}>{children}</th>
+}
+
+export function TableCell({ children, className, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) {
+  return <td className={cn('p-3 text-sm', className)} {...props}>{children}</td>
+}
 
 interface Column<T> {
   key: string
@@ -16,7 +37,7 @@ interface TableProps<T> {
   keyField: keyof T
   onRowClick?: (row: T) => void
   loading?: boolean
-  emptyMessage?: string
+  emptyMessage?: string | React.ReactNode
   className?: string
 }
 
@@ -149,5 +170,3 @@ export function Table<T extends Record<string, any>>({
     </div>
   )
 }
-
-import React from 'react'

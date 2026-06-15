@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, Globe, Database, Mail, Terminal, Server, Plus, Settings, LogOut } from 'lucide-react'
+import { Search, Globe, Database, Mail, Terminal, Server, Plus, Settings, LogOut, Activity } from 'lucide-react'
 import { cn } from '../lib/utils'
 import { useUIStore } from '../stores/uiStore'
 import { useAuthStore } from '../stores/authStore'
@@ -85,6 +85,14 @@ export default function CommandPalette() {
       description: 'Panel configuration',
       icon: <Settings className="w-4 h-4" />,
       action: () => navigate('/settings'),
+      category: 'Navigation',
+    },
+    {
+      id: 'audit-log',
+      label: 'Go to Audit Log',
+      description: 'View activity history',
+      icon: <Activity className="w-4 h-4" />,
+      action: () => navigate('/audit-log'),
       category: 'Navigation',
     },
     {

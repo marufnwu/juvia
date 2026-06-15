@@ -87,6 +87,7 @@ func (s *Server) metricsPump(cl *client) {
 			if err != nil {
 				continue
 			}
+			metrics.RecordSnapshot(m)
 			data, _ := json.Marshal(gin.H{"type": "metrics", "data": m})
 			select {
 			case cl.send <- data:

@@ -143,3 +143,26 @@ func getTerminalRecordingHandler(cfg RouterConfig) gin.HandlerFunc {
 		})
 	}
 }
+
+func deleteTerminalRecordingHandler(cfg RouterConfig) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id := c.Param("id")
+		recordingsDir := "/var/log/juvia/terminal"
+		filePath := filepath.Join(recordingsDir, id)
+
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "recording not found"))
+			return
+		}
+
+		if err := os.Remove(filePath); err != nil {
+			c.JSON(http.StatusInternalServerError, fail("DELETE_FAILED", "failed to delete recording"))
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"data":    gin.H{"message": "recording deleted"},
+		})
+	}
+}

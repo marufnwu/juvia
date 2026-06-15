@@ -74,14 +74,18 @@ func loginHandler(cfg RouterConfig) gin.HandlerFunc {
 
 		ip := c.ClientIP()
 		ua := c.Request.UserAgent()
-		if err := cfg.Sessions.CreateSession(c, user.ID, tp.RefreshToken, ip, ua, tp.ExpiresAt); err != nil {
+		csrfToken := generateCSRFToken()
+		csrfHash := auth.HashToken(csrfToken)
+		if err := cfg.Sessions.CreateSession(c, user.ID, tp.RefreshToken, ip, ua, tp.ExpiresAt, csrfHash); err != nil {
 			cfg.Log.Error("create session", "error", err)
 		}
 
 		c.SetCookie("refresh_token", tp.RefreshToken, int(7*24*time.Hour.Seconds()), "/", "", false, true)
+		c.Header("X-CSRF-Token", csrfToken)
 		c.JSON(http.StatusOK, success(gin.H{
 			"access_token": tp.AccessToken,
 			"expires_in":   tp.ExpiresIn,
+			"csrf_token":   csrfToken,
 			"user": gin.H{
 				"id":       user.ID,
 				"username": user.Username,
@@ -161,8 +165,6 @@ func meHandler(cfg RouterConfig) gin.HandlerFunc {
 		}
 
 		sessions, _ := cfg.Sessions.ListUserSessions(c, userID)
-		csrf := generateCSRFToken()
-		c.Header("X-CSRF-Token", csrf)
 
 		c.JSON(http.StatusOK, success(gin.H{
 			"user":     user,

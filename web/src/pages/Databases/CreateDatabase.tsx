@@ -5,6 +5,7 @@ import { Card, CardHeader, CardTitle } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { PageHeader } from '../../components/ui/Misc'
 import api from '../../lib/api'
+import { Input, Switch } from '../../components/ui/Input'
 import { cn } from '../../lib/utils'
 
 export default function CreateDatabase() {
@@ -82,18 +83,18 @@ export default function CreateDatabase() {
         <div className="space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1.5">Database Name</label>
-            <input
+            <Input
               type="text"
               value={formData.name}
               onChange={(e) => setFormData({ ...formData, name: e.target.value.replace(/\s/g, '_').toLowerCase() })}
               placeholder="my_database"
-              className="w-full h-10 px-3 bg-background border border-border rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="font-mono"
             />
             <p className="text-xs text-text-secondary mt-1">Only letters, numbers, and underscores allowed</p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-3">Database Engine</label>
+            <label className="block text-sm font-medium mb-3">Database Engine · Software managing your data</label>
             <div className="grid grid-cols-2 gap-3">
               {[
                 { id: 'mysql', label: 'MySQL 8.0', desc: 'Most popular for web applications' },
@@ -123,47 +124,38 @@ export default function CreateDatabase() {
           <CardTitle>Database User</CardTitle>
         </CardHeader>
         <div className="space-y-4">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={formData.create_user}
-              onChange={(e) => setFormData({ ...formData, create_user: e.target.checked })}
-              className="w-4 h-4 rounded border-border"
-            />
-            <span className="text-sm">Create a dedicated user for this database</span>
-          </label>
+          <Switch
+            checked={formData.create_user}
+            onChange={(e) => setFormData({ ...formData, create_user: e.target.checked })}
+            label="Create a dedicated user for this database"
+          />
 
           {formData.create_user && (
             <div className="space-y-3 pl-7">
               <div>
                 <label className="block text-sm font-medium mb-1.5">Username</label>
-                <input
+                <Input
                   type="text"
                   value={formData.username}
                   onChange={(e) => setFormData({ ...formData, username: e.target.value.replace(/\s/g, '_').toLowerCase() })}
                   placeholder="db_user"
-                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary/50"
+                  className="font-mono"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium mb-1.5">Password</label>
-                <input
+                <Input
                   type="password"
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   placeholder="Strong password"
-                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
                 />
               </div>
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={formData.grant_all}
-                  onChange={(e) => setFormData({ ...formData, grant_all: e.target.checked })}
-                  className="w-4 h-4 rounded border-border"
-                />
-                <span className="text-sm">Grant all privileges to this user</span>
-              </label>
+              <Switch
+                checked={formData.grant_all}
+                onChange={(e) => setFormData({ ...formData, grant_all: e.target.checked })}
+                label="Grant all privileges · Give full database control"
+              />
             </div>
           )}
         </div>

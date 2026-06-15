@@ -13,7 +13,7 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`
   }
-  const csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+  const csrf = localStorage.getItem('csrf_token')
   if (csrf) {
     config.headers['X-CSRF-Token'] = csrf
   }
@@ -21,14 +21,19 @@ api.interceptors.request.use((config) => {
 })
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    return response
+  },
   async (error: AxiosError) => {
     const originalRequest = error.config
     if (error.response?.status === 401 && originalRequest) {
       try {
         const res = await axios.post('/api/v1/auth/refresh', {}, { withCredentials: true })
-        const { access_token } = res.data.data
+        const { access_token, csrf_token } = res.data.data
         localStorage.setItem('access_token', access_token)
+        if (csrf_token) {
+          localStorage.setItem('csrf_token', csrf_token)
+        }
         originalRequest.headers.Authorization = `Bearer ${access_token}`
         return api(originalRequest)
       } catch {

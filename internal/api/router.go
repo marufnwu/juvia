@@ -38,14 +38,14 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 		{
 			authGroup.POST("/login", loginHandler(cfg))
 			authGroup.POST("/refresh", refreshHandler(cfg))
-			authGroup.POST("/logout", authMiddleware(cfg.JWT, cfg.Sessions), logoutHandler(cfg))
-			authGroup.GET("/me", authMiddleware(cfg.JWT, cfg.Sessions), meHandler(cfg))
-			authGroup.POST("/2fa/enable", authMiddleware(cfg.JWT, cfg.Sessions), enable2FAHandler(cfg))
-			authGroup.POST("/2fa/verify", authMiddleware(cfg.JWT, cfg.Sessions), verify2FAHandler(cfg))
-			authGroup.DELETE("/sessions/:id", authMiddleware(cfg.JWT, cfg.Sessions), revokeSessionHandler(cfg))
+			authGroup.POST("/logout", authWithCSRF(cfg.JWT, cfg.Sessions), logoutHandler(cfg))
+			authGroup.GET("/me", authWithCSRF(cfg.JWT, cfg.Sessions), meHandler(cfg))
+			authGroup.POST("/2fa/enable", authWithCSRF(cfg.JWT, cfg.Sessions), enable2FAHandler(cfg))
+			authGroup.POST("/2fa/verify", authWithCSRF(cfg.JWT, cfg.Sessions), verify2FAHandler(cfg))
+			authGroup.DELETE("/sessions/:id", authWithCSRF(cfg.JWT, cfg.Sessions), revokeSessionHandler(cfg))
 		}
 
-		users := api.Group("/users", authMiddleware(cfg.JWT, cfg.Sessions), adminMiddleware())
+		users := api.Group("/users", authWithCSRF(cfg.JWT, cfg.Sessions), adminMiddleware())
 		{
 			users.GET("", listUsersHandler(cfg))
 			users.POST("", createUserHandler(cfg))
@@ -54,7 +54,7 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 			users.DELETE("/:id", deleteUserHandler(cfg))
 		}
 
-		websites := api.Group("/websites", authMiddleware(cfg.JWT, cfg.Sessions))
+		websites := api.Group("/websites", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			websites.GET("", listWebsitesHandler(cfg))
 			websites.POST("", createWebsiteHandler(cfg))
@@ -71,28 +71,43 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 			websites.POST("/:id/ssl", issueSSLHandler(cfg))
 			websites.POST("/:id/ssl-renew", renewSSLHandler(cfg))
 			websites.DELETE("/:id/ssl", removeSSLHandler(cfg))
-			websites.GET("/:id/dns/records", listDNSRecordsHandler(cfg))
-			websites.POST("/:id/dns/records", createDNSRecordHandler(cfg))
-			websites.POST("/:id/dns/suggest", suggestDNSHandler(cfg))
+		websites.GET("/:id/dns/zone", getWebsiteZoneHandler(cfg))
+		websites.GET("/:id/dns/records", listDNSRecordsHandler(cfg))
+		websites.POST("/:id/dns/records", createDNSRecordHandler(cfg))
+		websites.POST("/:id/dns/suggest", suggestDNSHandler(cfg))
+		websites.GET("/:id/domains", listDomainsHandler(cfg))
+		websites.POST("/:id/domains", createDomainHandler(cfg))
+		websites.DELETE("/:id/domains/:domainId", deleteDomainHandler(cfg))
+		websites.POST("/:id/domains/:domainId/ssl", issueDomainSSLHandler(cfg))
+		websites.POST("/:id/domains/:domainId/ssl-renew", renewDomainSSLHandler(cfg))
+		websites.POST("/:id/domains/:domainId/dns-verify", verifyDomainDNSHandler(cfg))
 			websites.GET("/:id/files", listFilesHandler(cfg))
 			websites.POST("/:id/files/upload", uploadFilesHandler(cfg))
 			websites.GET("/:id/files/download", downloadFilesHandler(cfg))
 			websites.PUT("/:id/files/rename", renameFilesHandler(cfg))
 			websites.DELETE("/:id/files/delete", deleteFilesHandler(cfg))
 			websites.POST("/:id/files/extract", extractFilesHandler(cfg))
+			websites.POST("/:id/files/folder", createFolderHandler(cfg))
 			websites.GET("/:id/files/edit", getFileContentHandler(cfg))
 			websites.PUT("/:id/files/edit", saveFileContentHandler(cfg))
 			websites.GET("/:id/logs/access", accessLogHandler(cfg))
 			websites.GET("/:id/logs/error", errorLogHandler(cfg))
 		}
 
-		dns := api.Group("/dns", authMiddleware(cfg.JWT, cfg.Sessions))
+		dns := api.Group("/dns", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
+			dns.GET("/nameservers", getNameserversHandler(cfg))
+			dns.GET("/zones", listZonesHandler(cfg))
+			dns.POST("/zones", createZoneHandler(cfg))
+			dns.DELETE("/zones/:id", deleteZoneHandler(cfg))
+			dns.GET("/health", nameserverHealthHandler(cfg))
+			dns.GET("/check-all", checkAllDomainsDNSHandler(cfg))
+			dns.POST("/restart", restartBindHandler(cfg))
 			dns.PUT("/records/:id", updateDNSRecordHandler(cfg))
 			dns.DELETE("/records/:id", deleteDNSRecordHandler(cfg))
 		}
 
-		databases := api.Group("/databases", authMiddleware(cfg.JWT, cfg.Sessions))
+		databases := api.Group("/databases", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			databases.GET("", listDatabasesHandler(cfg))
 			databases.POST("", createDatabaseHandler(cfg))
@@ -106,7 +121,7 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 			databases.POST("/:id/query", queryDatabaseHandler(cfg))
 		}
 
-		email := api.Group("/email", authMiddleware(cfg.JWT, cfg.Sessions))
+		email := api.Group("/email", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			email.GET("/mailboxes", listMailboxesHandler(cfg))
 			email.POST("/mailboxes", createMailboxHandler(cfg))
@@ -124,7 +139,7 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 			email.GET("/deliverability", deliverabilityHandler(cfg))
 		}
 
-		firewall := api.Group("/firewall", authMiddleware(cfg.JWT, cfg.Sessions))
+		firewall := api.Group("/firewall", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			firewall.GET("/rules", listFirewallRulesHandler(cfg))
 			firewall.POST("/rules", createFirewallRuleHandler(cfg))
@@ -133,7 +148,7 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 			firewall.DELETE("/rules/:id", deleteFirewallRuleHandler(cfg))
 		}
 
-		backups := api.Group("/backups", authMiddleware(cfg.JWT, cfg.Sessions))
+		backups := api.Group("/backups", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			backups.GET("", listBackupsHandler(cfg))
 			backups.POST("", createBackupHandler(cfg))
@@ -142,14 +157,14 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 			backups.DELETE("/:id", deleteBackupHandler(cfg))
 		}
 
-		backupSchedules := api.Group("/backup-schedules", authMiddleware(cfg.JWT, cfg.Sessions))
+		backupSchedules := api.Group("/backup-schedules", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			backupSchedules.GET("", listBackupSchedulesHandler(cfg))
 			backupSchedules.POST("", createBackupScheduleHandler(cfg))
 			backupSchedules.DELETE("/:id", deleteBackupScheduleHandler(cfg))
 		}
 
-		cron := api.Group("/cron", authMiddleware(cfg.JWT, cfg.Sessions))
+		cron := api.Group("/cron", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			cron.GET("", listCronJobsHandler(cfg))
 			cron.POST("", createCronJobHandler(cfg))
@@ -161,12 +176,12 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 			cron.GET("/:id/logs", getCronJobLogsHandler(cfg))
 		}
 
-		logs := api.Group("/logs", authMiddleware(cfg.JWT, cfg.Sessions))
+		logs := api.Group("/logs", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			logs.GET("/system", systemLogsHandler(cfg))
 		}
 
-		alerts := api.Group("/alerts", authMiddleware(cfg.JWT, cfg.Sessions))
+		alerts := api.Group("/alerts", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			alerts.GET("", listAlertsHandler(cfg))
 			alerts.POST("/:id/acknowledge", acknowledgeAlertHandler(cfg))
@@ -175,20 +190,20 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 			alerts.PUT("/settings", updateAlertSettingsHandler(cfg))
 		}
 
-		metrics := api.Group("/metrics", authMiddleware(cfg.JWT, cfg.Sessions))
+		metrics := api.Group("/metrics", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			metrics.GET("/current", currentMetricsHandler(cfg))
 			metrics.GET("/history", historyMetricsHandler(cfg))
 		}
 
-		apps := api.Group("/websites/:id/apps", authMiddleware(cfg.JWT, cfg.Sessions))
+		apps := api.Group("/websites/:id/apps", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			apps.GET("", listAppsHandler(cfg))
 			apps.POST("/install", installAppHandler(cfg))
 			apps.POST("/:app_id/update", updateAppHandler(cfg))
 		}
 
-		git := api.Group("/websites/:id/git", authMiddleware(cfg.JWT, cfg.Sessions))
+		git := api.Group("/websites/:id/git", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			git.GET("", getGitConfigHandler(cfg))
 			git.POST("", setupGitHandler(cfg))
@@ -196,7 +211,7 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 			git.GET("/webhook", getWebhookURLHandler(cfg))
 		}
 
-		webmail := api.Group("/webmail", authMiddleware(cfg.JWT, cfg.Sessions))
+		webmail := api.Group("/webmail", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			webmail.GET("/status", webmailStatusHandler(cfg))
 			webmail.POST("/install", installWebmailHandler(cfg))
@@ -204,16 +219,17 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 			webmail.GET("/url", webmailURLHandler(cfg))
 		}
 
-		terminal := api.Group("/terminal", authMiddleware(cfg.JWT, cfg.Sessions))
+		terminal := api.Group("/terminal", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			terminal.POST("/session", createTerminalSessionHandler(cfg))
 			terminal.GET("/sessions", listTerminalSessionsHandler(cfg))
 			terminal.DELETE("/sessions/:id", closeTerminalSessionHandler(cfg))
 			terminal.GET("/recordings", listTerminalRecordingsHandler(cfg))
 			terminal.GET("/recordings/:id", getTerminalRecordingHandler(cfg))
+			terminal.DELETE("/recordings/:id", deleteTerminalRecordingHandler(cfg))
 		}
 
-		updates := api.Group("/updates", authMiddleware(cfg.JWT, cfg.Sessions))
+		updates := api.Group("/updates", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			updates.GET("/check", checkUpdateHandler(cfg))
 			updates.POST("/download", downloadUpdateHandler(cfg))
@@ -221,15 +237,20 @@ func NewRouter(cfg RouterConfig) *gin.Engine {
 			updates.POST("/rollback", rollbackHandler(cfg))
 		}
 
-		settingsGroup := api.Group("/settings", authMiddleware(cfg.JWT, cfg.Sessions))
+		api.GET("/server/ip", authWithCSRF(cfg.JWT, cfg.Sessions), getServerIPHandler(cfg))
+		api.POST("/server/ip/refresh", authWithCSRF(cfg.JWT, cfg.Sessions), refreshServerIPHandler(cfg))
+
+		settingsGroup := api.Group("/settings", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			settingsGroup.GET("", getSettingsHandler(cfg))
 			settingsGroup.PUT("", updateSettingsHandler(cfg))
 			settingsGroup.GET("/export", exportConfigHandler(cfg))
 			settingsGroup.POST("/import", importConfigHandler(cfg))
+			settingsGroup.GET("/ssh", getSSHSettingsHandler(cfg))
+			settingsGroup.PUT("/ssh", updateSSHSettingsHandler(cfg))
 		}
 
-		auditLog := api.Group("/audit-log", authMiddleware(cfg.JWT, cfg.Sessions))
+		auditLog := api.Group("/audit-log", authWithCSRF(cfg.JWT, cfg.Sessions))
 		{
 			auditLog.GET("", getAuditLogHandler(cfg))
 		}

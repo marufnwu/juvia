@@ -16,6 +16,8 @@ func currentMetricsHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		metrics.RecordSnapshot(m)
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    m,
@@ -25,11 +27,12 @@ func currentMetricsHandler(cfg RouterConfig) gin.HandlerFunc {
 
 func historyMetricsHandler(cfg RouterConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		rangeStr := c.DefaultQuery("range", "1h")
+		points := metrics.GetHistory(rangeStr)
+
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"data": gin.H{
-				"message": "historical metrics require VictoriaMetrics (Phase 5)",
-			},
+			"data":    points,
 		})
 	}
 }

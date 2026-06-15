@@ -22,7 +22,7 @@ func validateDomain(domain string) error {
 		return &validationError{"domain cannot start or end with a dot"}
 	}
 	if _, err := idna.New().ToUnicode(domain); err != nil {
-		return&validationError{"invalid domain name"}
+		return &validationError{"invalid domain name"}
 	}
 	if !domainRegex.MatchString(domain) {
 		return &validationError{"invalid domain format"}
@@ -61,7 +61,8 @@ func listWebsitesHandler(cfg RouterConfig) gin.HandlerFunc {
 			p.Limit = 50
 		}
 
-		result, err := cfg.DB.ListWebsites(c.Request.Context(), p.Status, p.Search, p.Sort, p.Order, p.Page, p.Limit)
+		userID, _ := c.Get("user_id")
+		result, err := cfg.DB.ListWebsites(c.Request.Context(), p.Status, p.Search, p.Sort, p.Order, p.Page, p.Limit, userID.(int64))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 			return
@@ -81,9 +82,12 @@ func listWebsitesHandler(cfg RouterConfig) gin.HandlerFunc {
 }
 
 type createWebsiteRequest struct {
-	Domain     string `json:"domain" binding:"required"`
-	PHPVersion string `json:"php_version" binding:"required"`
-	WebServer  string `json:"web_server" binding:"required"`
+	Domain         string `json:"domain" binding:"required"`
+	PHPVersion     string `json:"php_version" binding:"required"`
+	WebServer      string `json:"web_server" binding:"required"`
+	DocumentRoot   string `json:"document_root"`
+	EnableSSL      bool   `json:"enable_ssl"`
+	CreateDatabase bool   `json:"create_database"`
 }
 
 func createWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
@@ -126,6 +130,9 @@ func createWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 
 		linuxUser := agent.SanitizeLinuxUser(req.Domain)
 		documentRoot := "/home/" + linuxUser + "/public_html"
+		if req.DocumentRoot != "" {
+			documentRoot = req.DocumentRoot
+		}
 		website, err := cfg.DB.CreateWebsite(c.Request.Context(), req.Domain, documentRoot, req.PHPVersion, req.WebServer, userID)
 		if err != nil {
 			tasks.NewRunner(cfg.DB.DB, cfg.Log).FailTask(c.Request.Context(), task.TaskID, err.Error())
@@ -180,22 +187,61 @@ func createWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 		cfg.DB.UpdateWebsiteStatus(c.Request.Context(), website.ID, "active")
 		tasks.NewRunner(cfg.DB.DB, cfg.Log).CompleteTask(c.Request.Context(), task.TaskID, `{"website_id":`+strconv.FormatInt(website.ID, 10)+`}`)
 
-		cfg.AgentClient.Call(c.Request.Context(), "dns.zone.update", map[string]interface{}{
-			"domain": req.Domain,
-		})
+		serverIP, _ := cfg.DB.GetSetting(c.Request.Context(), "server_ip")
+
+		if zone != nil {
+			serial := nextSerial(zone.Serial)
+			resp, err := cfg.AgentClient.Call(c.Request.Context(), "dns.zone.update", map[string]interface{}{
+				"domain":    req.Domain,
+				"server_ip": serverIP,
+				"serial":    serial,
+			})
+			if err != nil {
+				cfg.Log.ErrorContext(c.Request.Context(), "dns.zone.update failed after website create: "+err.Error())
+			} else if resp.Error != nil {
+				cfg.Log.ErrorContext(c.Request.Context(), "dns.zone.update agent error after website create: "+resp.Error.Message)
+			} else {
+				cfg.DB.UpdateZoneSerial(c.Request.Context(), zone.ID, serial)
+			}
+		}
+
+		if req.EnableSSL {
+			cfg.AgentClient.Call(c.Request.Context(), "ssl.issue", map[string]interface{}{
+				"domain": req.Domain,
+			})
+		}
+
+		var dbID int64
+		if req.CreateDatabase {
+			dbName := strings.ReplaceAll(req.Domain, ".", "_")
+			dbResp, err := cfg.AgentClient.Call(c.Request.Context(), "database.create", map[string]interface{}{
+				"name":   dbName,
+				"engine": "mysql",
+			})
+			if err == nil && dbResp.Error == nil {
+				db, err := cfg.DB.CreateDatabase(c.Request.Context(), dbName, "mysql", userID)
+				if err == nil {
+					dbID = db.ID
+				}
+			}
+		}
 
 		cfg.DB.LogAudit(c.Request.Context(), &userID, "Created website "+req.Domain, c.ClientIP(), c.Request.UserAgent(), "")
 
+		data := gin.H{
+			"id":          website.ID,
+			"domain":      website.Domain,
+			"status":      "active",
+			"php_version": req.PHPVersion,
+			"web_server":  req.WebServer,
+			"task_id":     task.TaskID,
+		}
+		if dbID > 0 {
+			data["database_id"] = dbID
+		}
 		c.JSON(http.StatusCreated, gin.H{
 			"success": true,
-			"data": gin.H{
-				"id":          website.ID,
-				"domain":      website.Domain,
-				"status":      "active",
-				"php_version": req.PHPVersion,
-				"web_server":  req.WebServer,
-				"task_id":     task.TaskID,
-			},
+			"data":    data,
 		})
 	}
 }
@@ -211,6 +257,13 @@ func getWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 		website, err := cfg.DB.GetWebsiteByID(c.Request.Context(), id)
 		if err != nil {
 			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "website not found"))
+			return
+		}
+
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
 			return
 		}
 
@@ -266,6 +319,13 @@ func updateWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
 		phpVersion := req.PHPVersion
 		if phpVersion == "" && website.PHPVersion != nil {
 			phpVersion = *website.PHPVersion
@@ -280,8 +340,8 @@ func updateWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
-		userID := getUserID(c)
-		cfg.DB.LogAudit(c.Request.Context(), &userID, "Updated website "+website.Domain, c.ClientIP(), c.Request.UserAgent(), "")
+		uid := getUserID(c)
+		cfg.DB.LogAudit(c.Request.Context(), &uid, "Updated website "+website.Domain, c.ClientIP(), c.Request.UserAgent(), "")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -304,13 +364,20 @@ func deleteWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
 		if err := cfg.DB.SoftDeleteWebsite(c.Request.Context(), id); err != nil {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 			return
 		}
 
-		userID := getUserID(c)
-		cfg.DB.LogAudit(c.Request.Context(), &userID, "Moved website "+website.Domain+" to trash", c.ClientIP(), c.Request.UserAgent(), "")
+		uid := getUserID(c)
+		cfg.DB.LogAudit(c.Request.Context(), &uid, "Moved website "+website.Domain+" to trash", c.ClientIP(), c.Request.UserAgent(), "")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -333,8 +400,15 @@ func suspendWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
-		userID := getUserID(c)
-		task, _ := tasks.NewRunner(cfg.DB.DB, cfg.Log).CreateTask(c.Request.Context(), "suspend_website", userID)
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
+		uid := getUserID(c)
+		task, _ := tasks.NewRunner(cfg.DB.DB, cfg.Log).CreateTask(c.Request.Context(), "suspend_website", uid)
 
 		_, err = cfg.AgentClient.Call(c.Request.Context(), "website.suspend", map[string]interface{}{
 			"domain":       website.Domain,
@@ -352,7 +426,7 @@ func suspendWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 		}
 
 		tasks.NewRunner(cfg.DB.DB, cfg.Log).CompleteTask(c.Request.Context(), task.TaskID, `{}`)
-		cfg.DB.LogAudit(c.Request.Context(), &userID, "Suspended website "+website.Domain, c.ClientIP(), c.Request.UserAgent(), "")
+		cfg.DB.LogAudit(c.Request.Context(), &uid, "Suspended website "+website.Domain, c.ClientIP(), c.Request.UserAgent(), "")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -375,13 +449,42 @@ func restoreWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
 		if err := cfg.DB.RestoreWebsite(c.Request.Context(), id); err != nil {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 			return
 		}
 
-		userID := getUserID(c)
-		cfg.DB.LogAudit(c.Request.Context(), &userID, "Restored website "+website.Domain+" from trash", c.ClientIP(), c.Request.UserAgent(), "")
+		existingZone, _ := cfg.DB.GetZoneByWebsite(c.Request.Context(), id)
+		if existingZone == nil {
+			newZone, err := cfg.DB.CreateZone(c.Request.Context(), id, website.Domain)
+			if err != nil {
+				cfg.Log.ErrorContext(c.Request.Context(), "failed to recreate zone on restore: "+err.Error())
+			} else {
+				uid := userID.(int64)
+				cfg.DB.LogAudit(c.Request.Context(), &uid, "Recreated DNS zone "+newZone.Domain+" (id="+strconv.FormatInt(newZone.ID, 10)+")", c.ClientIP(), c.Request.UserAgent(), "")
+			}
+		}
+
+		serverIP, _ := cfg.DB.GetSetting(c.Request.Context(), "server_ip")
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "dns.zone.update", map[string]interface{}{
+			"domain":    website.Domain,
+			"server_ip": serverIP,
+		})
+		if err != nil {
+			cfg.Log.ErrorContext(c.Request.Context(), "dns.zone.update failed on restore: "+err.Error())
+		} else if resp.Error != nil {
+			cfg.Log.ErrorContext(c.Request.Context(), "dns.zone.update agent error on restore: "+resp.Error.Message)
+		}
+
+		uid := getUserID(c)
+		cfg.DB.LogAudit(c.Request.Context(), &uid, "Restored website "+website.Domain+" from trash", c.ClientIP(), c.Request.UserAgent(), "")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -404,8 +507,15 @@ func permanentDeleteWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
-		userID := getUserID(c)
-		task, _ := tasks.NewRunner(cfg.DB.DB, cfg.Log).CreateTask(c.Request.Context(), "delete_website", userID)
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
+		uid := getUserID(c)
+		task, _ := tasks.NewRunner(cfg.DB.DB, cfg.Log).CreateTask(c.Request.Context(), "delete_website", uid)
 
 		_, err = cfg.AgentClient.Call(c.Request.Context(), "website.delete", map[string]interface{}{
 			"domain":       website.Domain,
@@ -421,8 +531,17 @@ func permanentDeleteWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "dns.zone.delete", map[string]interface{}{
+			"domain": website.Domain,
+		})
+		if err != nil {
+			cfg.Log.ErrorContext(c.Request.Context(), "dns.zone.delete failed: "+err.Error())
+		} else if resp.Error != nil {
+			cfg.Log.ErrorContext(c.Request.Context(), "dns.zone.delete agent error: "+resp.Error.Message)
+		}
+
 		tasks.NewRunner(cfg.DB.DB, cfg.Log).CompleteTask(c.Request.Context(), task.TaskID, `{}`)
-		cfg.DB.LogAudit(c.Request.Context(), &userID, "Permanently deleted website "+website.Domain, c.ClientIP(), c.Request.UserAgent(), "")
+		cfg.DB.LogAudit(c.Request.Context(), &uid, "Permanently deleted website "+website.Domain, c.ClientIP(), c.Request.UserAgent(), "")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -488,13 +607,20 @@ func changePHPHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
 		if err := cfg.DB.UpdateWebsite(c.Request.Context(), id, req.PHPVersion, website.WebServer); err != nil {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 			return
 		}
 
-		userID := getUserID(c)
-		cfg.DB.LogAudit(c.Request.Context(), &userID, "Changed PHP version to "+req.PHPVersion+" for "+website.Domain, c.ClientIP(), c.Request.UserAgent(), "")
+		uid := getUserID(c)
+		cfg.DB.LogAudit(c.Request.Context(), &uid, "Changed PHP version to "+req.PHPVersion+" for "+website.Domain, c.ClientIP(), c.Request.UserAgent(), "")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,

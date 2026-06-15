@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -47,8 +48,12 @@ func listDatabasesHandler(cfg RouterConfig) gin.HandlerFunc {
 }
 
 type createDatabaseRequest struct {
-	Name   string `json:"name" binding:"required"`
-	Engine string `json:"engine" binding:"required"`
+	Name        string `json:"name" binding:"required"`
+	Engine     string `json:"engine" binding:"required"`
+	CreateUser bool   `json:"create_user"`
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	GrantAll   bool   `json:"grant_all"`
 }
 
 func createDatabaseHandler(cfg RouterConfig) gin.HandlerFunc {
@@ -91,11 +96,37 @@ func createDatabaseHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		var dbUserID int64
+		if req.CreateUser && req.Username != "" && req.Password != "" {
+			passwordHash, _ := auth.HashPassword(req.Password)
+			userResp, err := cfg.AgentClient.Call(c.Request.Context(), "database.user.create", map[string]interface{}{
+				"name":     req.Name,
+				"engine":   req.Engine,
+				"username": req.Username,
+				"password": req.Password,
+				"host":     "localhost",
+			})
+			if err == nil && userResp.Error == nil {
+				createdUser, err := cfg.DB.CreateDBUser(c.Request.Context(), db.ID, req.Username, passwordHash, "localhost")
+				if err == nil {
+					dbUserID = createdUser.ID
+				}
+			}
+			_ = userResp
+		}
+
 		cfg.DB.LogAudit(c.Request.Context(), &userID, "Created database "+req.Name, c.ClientIP(), c.Request.UserAgent(), "")
+
+		result := gin.H{
+			"database": db,
+		}
+		if dbUserID > 0 {
+			result["user_id"] = dbUserID
+		}
 
 		c.JSON(http.StatusCreated, gin.H{
 			"success": true,
-			"data":    db,
+			"data":    result,
 		})
 	}
 }
@@ -294,10 +325,15 @@ func exportDatabaseHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
-		c.JSON(http.StatusOK, gin.H{
-			"success": true,
-			"data":    resp.Result,
-		})
+		sqlData, ok := resp.Result.(string)
+		if !ok {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "invalid export data"))
+			return
+		}
+
+		filename := fmt.Sprintf("%s.sql", database.Name)
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s\"", filename))
+		c.Data(http.StatusOK, "application/sql", []byte(sqlData))
 	}
 }
 

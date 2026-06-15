@@ -17,6 +17,7 @@ import {
   Server,
   Users,
   Bell,
+  Network,
 } from 'lucide-react'
 import { cn } from '../../lib/utils'
 import { useUIStore } from '../../stores/uiStore'
@@ -26,33 +27,39 @@ const navSections = [
   {
     label: 'Server',
     items: [
-      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-      { to: '/metrics', label: 'Metrics', icon: Activity },
-      { to: '/terminal', label: 'Terminal', icon: Terminal },
+      { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, tooltip: 'Server overview' },
+      { to: '/metrics', label: 'Metrics', icon: Activity, tooltip: 'How your server is performing' },
+      { to: '/terminal', label: 'Terminal', icon: Terminal, tooltip: 'Command-line for server management' },
+      { to: '/terminal/recordings', label: 'Recordings', icon: Clock, tooltip: 'Saved terminal playback' },
     ],
   },
   {
     label: 'Hosting',
     items: [
-      { to: '/websites', label: 'Websites', icon: Globe },
-      { to: '/databases', label: 'Databases', icon: Database },
-      { to: '/email', label: 'Email', icon: Mail },
-      { to: '/files', label: 'Files', icon: FolderOpen },
+      { to: '/websites', label: 'Websites', icon: Globe, tooltip: 'Manage your websites' },
+      { to: '/websites/trash', label: 'Trash', icon: Trash2, tooltip: 'Deleted websites (30-day retention)' },
+      { to: '/dns', label: 'DNS', icon: Network, tooltip: 'Authoritative DNS zones and nameservers' },
+      { to: '/databases', label: 'Databases', icon: Database, tooltip: 'Structured data storage' },
+      { to: '/email', label: 'Email', icon: Mail, tooltip: 'Mailboxes, aliases, and forwarding' },
+      { to: '/email/webmail', label: 'Webmail', icon: Mail, tooltip: 'Browser-based email client' },
+      { to: '/files', label: 'Files', icon: FolderOpen, tooltip: 'Manage website files' },
     ],
   },
   {
     label: 'Security',
     items: [
-      { to: '/firewall', label: 'Firewall', icon: Shield },
-      { to: '/backups', label: 'Backups', icon: Archive },
-      { to: '/cron', label: 'Cron Jobs', icon: Clock },
-      { to: '/alerts', label: 'Alerts', icon: Bell },
+      { to: '/firewall', label: 'Firewall', icon: Shield, tooltip: 'Traffic allow/deny rules' },
+      { to: '/backups', label: 'Backups', icon: Archive, tooltip: 'Save and restore data' },
+      { to: '/cron', label: 'Cron Jobs', icon: Clock, tooltip: 'Scheduled automated tasks' },
+      { to: '/alerts', label: 'Alerts', icon: Bell, tooltip: 'Monitoring notifications' },
     ],
   },
   {
     label: 'System',
     items: [
-      { to: '/settings', label: 'Settings', icon: Settings },
+      { to: '/settings', label: 'Settings', icon: Settings, tooltip: 'Server configuration' },
+      { to: '/users', label: 'Users', icon: Users, tooltip: 'Manage panel users' },
+      { to: '/audit-log', label: 'Audit Log', icon: Activity, tooltip: 'History of all changes' },
     ],
   },
 ]
@@ -95,7 +102,9 @@ export default function Sidebar() {
               </div>
             )}
             {section.items.map((item) => {
-              const active = location.pathname.startsWith(item.to)
+              const active = location.pathname === item.to ||
+                (location.pathname.startsWith(item.to + '/') &&
+                 !section.items.some(sibling => sibling.to !== item.to && location.pathname.startsWith(sibling.to)))
               return (
                 <Link
                   key={item.to}
@@ -106,7 +115,7 @@ export default function Sidebar() {
                       ? 'bg-primary/10 text-primary border-l-2 border-primary ml-0'
                       : 'text-text-secondary hover:text-foreground hover:bg-accent/50'
                   )}
-                  title={sidebarCollapsed ? item.label : undefined}
+                  title={sidebarCollapsed ? item.label : item.tooltip}
                 >
                   <item.icon
                     size={18}

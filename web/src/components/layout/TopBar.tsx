@@ -62,6 +62,8 @@ export default function TopBar() {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
+  const toggleTheme = useUIStore((s) => s.toggleTheme)
+
   return (
     <header className="h-14 border-b border-border bg-surface flex items-center px-4 gap-4">
       <div className="flex-1">
@@ -93,7 +95,7 @@ export default function TopBar() {
       </button>
 
       <button
-        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        onClick={toggleTheme}
         className="p-2 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
         title="Toggle theme"
       >
@@ -158,7 +160,8 @@ export default function TopBar() {
                 Profile & Sessions
               </Link>
               <Link
-                to="/settings/security"
+                to="/settings"
+                state={{ activeTab: 'security' }}
                 className="flex items-center gap-3 px-3 py-2 text-sm text-text-secondary hover:text-foreground hover:bg-accent/50"
                 onClick={() => setShowUserMenu(false)}
               >

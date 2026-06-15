@@ -131,7 +131,7 @@ func TestListWebsites(t *testing.T) {
 		}
 	}
 
-	result, err := db.ListWebsites(ctx, "", "", "created_at", "desc", 1, 10)
+	result, err := db.ListWebsites(ctx, "", "", "created_at", "desc", 1, 10, 0)
 	if err != nil {
 		t.Fatalf("list websites: %v", err)
 	}

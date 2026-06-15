@@ -4,6 +4,8 @@ import { Server, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import api from '../../lib/api'
 import { useAuthStore } from '../../stores/authStore'
 import { cn } from '../../lib/utils'
+import { Input } from '../../components/ui/Input'
+import { Button } from '../../components/ui/Button'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -32,6 +34,9 @@ export default function Login() {
         const res = await api.post('/auth/login', { username, password })
         if (res.data.data?.access_token) {
           setAccessToken(res.data.data.access_token)
+          if (res.data.data.csrf_token) {
+            localStorage.setItem('csrf_token', res.data.data.csrf_token)
+          }
           navigate('/dashboard')
         } else if (res.data.data?.requires_2fa) {
           setRequires2FA(true)
@@ -62,11 +67,10 @@ export default function Login() {
                 <label className="block text-sm font-medium text-foreground mb-1.5">
                   Username
                 </label>
-                <input
+                <Input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
-                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
                   placeholder="Enter username"
                   required
                   autoFocus
@@ -78,21 +82,23 @@ export default function Login() {
                   Password
                 </label>
                 <div className="relative">
-                  <input
+                  <Input
                     type={showPassword ? 'text' : 'password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full h-10 px-3 pr-10 bg-background border border-border rounded text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
+                    className="pr-10"
                     placeholder="Enter password"
                     required
                   />
-                  <button
+                  <Button
                     type="button"
+                    variant="ghost"
+                    size="sm"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-text-secondary hover:text-foreground"
+                    className="absolute right-1 top-1/2 -translate-y-1/2 text-text-secondary hover:text-foreground"
                   >
                     {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
+                  </Button>
                 </div>
               </div>
 
@@ -103,13 +109,15 @@ export default function Login() {
                 </div>
               )}
 
-              <button
+              <Button
                 type="submit"
+                variant="primary"
+                className="w-full"
                 disabled={loading}
-                className="w-full h-10 bg-primary text-white font-medium rounded hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                loading={loading}
               >
                 {loading ? 'Signing in...' : 'Sign in'}
-              </button>
+              </Button>
             </form>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
@@ -123,11 +131,11 @@ export default function Login() {
                 <label className="block text-sm font-medium text-foreground mb-1.5">
                   2FA Code
                 </label>
-                <input
+                <Input
                   type="text"
                   value={twoFactorCode}
                   onChange={(e) => setTwoFactorCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm text-foreground text-center tracking-widest font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-colors"
+                  className="text-center tracking-widest font-mono"
                   placeholder="000000"
                   maxLength={6}
                   required
@@ -142,25 +150,28 @@ export default function Login() {
                 </div>
               )}
 
-              <button
+              <Button
                 type="submit"
+                variant="primary"
+                className="w-full"
                 disabled={loading || twoFactorCode.length !== 6}
-                className="w-full h-10 bg-primary text-white font-medium rounded hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                loading={loading}
               >
                 {loading ? 'Verifying...' : 'Verify'}
-              </button>
+              </Button>
 
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                className="w-full"
                 onClick={() => {
                   setRequires2FA(false)
                   setTwoFactorCode('')
                   setError('')
                 }}
-                className="w-full text-sm text-text-secondary hover:text-foreground transition-colors"
               >
                 Back to login
-              </button>
+              </Button>
             </form>
           )}
         </div>

@@ -104,6 +104,50 @@ func HandleWebsiteCreate(ctx context.Context, params json.RawMessage) (interface
 	}, nil
 }
 
+func HandleWebsiteUpdate(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req struct {
+		Domain       string   `json:"domain"`
+		PHPVersion   string   `json:"php_version"`
+		WebServer    string   `json:"web_server"`
+		ExtraDomains []string `json:"extra_domains"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid params: %w", err)
+	}
+	if req.Domain == "" {
+		return nil, fmt.Errorf("domain is required")
+	}
+
+	linuxUser := SanitizeLinuxUser(req.Domain)
+	homeDir := "/home/" + linuxUser
+	publicHTML := filepath.Join(homeDir, "public_html")
+
+	if req.WebServer == "" {
+		req.WebServer = "nginx"
+	}
+	if req.PHPVersion == "" {
+		req.PHPVersion = "8.2"
+	}
+
+	cfg := nginx.SiteConfig{
+		Domain:       req.Domain,
+		DocumentRoot: publicHTML,
+		PHPVersion:   req.PHPVersion,
+		LinuxUser:    linuxUser,
+		ExtraDomains: req.ExtraDomains,
+	}
+
+	if err := nginx.GenerateAndWriteSiteConfig(cfg); err != nil {
+		return nil, fmt.Errorf("generate nginx config: %w", err)
+	}
+
+	if err := nginx.ReloadNginx(); err != nil {
+		return nil, fmt.Errorf("reload nginx: %w", err)
+	}
+
+	return map[string]interface{}{"updated": true}, nil
+}
+
 func HandleWebsiteDelete(ctx context.Context, params json.RawMessage) (interface{}, error) {
 	var req struct {
 		Domain       string `json:"domain"`

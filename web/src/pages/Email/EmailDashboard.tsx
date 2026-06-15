@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   Plus, Mail, CheckCircle, XCircle, AlertTriangle, Copy, RefreshCw,
-  Users, Forward, AtSign, Shield, Globe
+  Users, Forward, AtSign, Shield, Globe, Pencil
 } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
@@ -10,11 +10,12 @@ import { Tabs, TabPanel } from '../../components/ui/Tabs'
 import { Table } from '../../components/ui/Table'
 import { PageHeader } from '../../components/ui/Misc'
 import { CopyButton } from '../../components/ui/Misc'
-import { Modal } from '../../components/ui/Modal'
+import { Modal, ConfirmModal } from '../../components/ui/Modal'
 import { Input, Label, FormGroup, FormError } from '../../components/ui/Input'
 import api from '../../lib/api'
 import { formatDate, formatBytes } from '../../lib/utils'
 import { cn } from '../../lib/utils'
+import { useApiError } from '../../hooks/useToast'
 
 interface Mailbox {
   id: number
@@ -50,6 +51,7 @@ interface DeliverabilityResult {
 }
 
 export default function EmailDashboard() {
+  const showError = useApiError()
   const [activeTab, setActiveTab] = useState('mailboxes')
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([])
   const [aliases, setAliases] = useState<Alias[]>([])
@@ -65,6 +67,14 @@ export default function EmailDashboard() {
   })
   const [formError, setFormError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [catchAllDomain, setCatchAllDomain] = useState('')
+  const [catchAllForwardTo, setCatchAllForwardTo] = useState('')
+  const [catchAllLoading, setCatchAllLoading] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingMailbox, setEditingMailbox] = useState<Mailbox | null>(null)
+  const [editFormData, setEditFormData] = useState({ display_name: '', quota: 0, forward_to: '' })
+  const [confirmDelete, setConfirmDelete] = useState<{ type: string; id: number } | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const tabs = [
     { id: 'mailboxes', label: 'Mailboxes', count: mailboxes.length },
@@ -92,6 +102,36 @@ export default function EmailDashboard() {
       console.error(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadCatchAll = async () => {
+    if (!catchAllDomain) return
+    setCatchAllLoading(true)
+    try {
+      const res = await api.get(`/email/catch-all?domain=${encodeURIComponent(catchAllDomain)}`)
+      if (res.data.data?.forward_to) {
+        setCatchAllForwardTo(res.data.data.forward_to)
+      }
+    } catch (err: any) {
+      showError(err, 'Failed to load catch-all')
+    } finally {
+      setCatchAllLoading(false)
+    }
+  }
+
+  const saveCatchAll = async () => {
+    if (!catchAllDomain || !catchAllForwardTo) return
+    setCatchAllLoading(true)
+    try {
+      await api.put('/email/catch-all', {
+        domain: catchAllDomain,
+        forward_to: catchAllForwardTo,
+      })
+    } catch (err: any) {
+      showError(err, 'Failed to save catch-all')
+    } finally {
+      setCatchAllLoading(false)
     }
   }
 
@@ -135,15 +175,53 @@ export default function EmailDashboard() {
     }
   }
 
-  const handleDelete = async (type: string, id: number) => {
-    if (!confirm('Delete this item?')) return
+  const handleDelete = (type: string, id: number) => {
+    setConfirmDelete({ type, id })
+  }
+
+  const doDelete = async () => {
+    if (!confirmDelete) return
+    const { type, id } = confirmDelete
+    setConfirmDelete(null)
+    setDeleting(true)
     try {
       if (type === 'mailbox') await api.delete(`/email/mailboxes/${id}`)
       else if (type === 'alias') await api.delete(`/email/aliases/${id}`)
       else await api.delete(`/email/forwarders/${id}`)
       loadData()
-    } catch (err) {
-      console.error(err)
+    } catch (err: any) {
+      showError(err, 'Failed to delete')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const openEditModal = (mailbox: Mailbox) => {
+    setEditingMailbox(mailbox)
+    setEditFormData({
+      display_name: mailbox.display_name || '',
+      quota: mailbox.quota,
+      forward_to: mailbox.forward_to || '',
+    })
+    setShowEditModal(true)
+  }
+
+  const handleEdit = async () => {
+    if (!editingMailbox) return
+    setSaving(true)
+    try {
+      await api.put(`/email/mailboxes/${editingMailbox.id}`, {
+        display_name: editFormData.display_name,
+        quota: editFormData.quota,
+        forward_to: editFormData.forward_to,
+      })
+      setShowEditModal(false)
+      setEditingMailbox(null)
+      loadData()
+    } catch (err: any) {
+      showError(err, 'Failed to update mailbox')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -176,40 +254,40 @@ export default function EmailDashboard() {
               Create Mailbox
             </Button>
           </div>
-          <table className="w-full">
-            <thead className="bg-accent/50">
-              <tr>
-                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Email</th>
-                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Display Name</th>
-                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Quota</th>
-                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Status</th>
-                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {mailboxes.map((m) => (
-                <tr key={m.id} className="hover:bg-accent/30 transition-colors">
-                  <td className="p-3">
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-4 h-4 text-text-secondary" />
-                      <span className="font-medium">{m.email}</span>
-                    </div>
-                  </td>
-                  <td className="p-3 text-text-secondary">{m.display_name || '—'}</td>
-                  <td className="p-3 text-text-secondary">{formatBytes(m.quota)}</td>
-                  <td className="p-3"><StatusBadge status={m.status} /></td>
-                  <td className="p-3">
-                    <button onClick={() => handleDelete('mailbox', m.id)} className="text-xs text-danger hover:underline">Delete</button>
-                  </td>
-                </tr>
-              ))}
-              {mailboxes.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="p-8 text-center text-text-secondary text-sm">No mailboxes</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          <Table
+            columns={[
+              { key: 'email', header: 'Email', render: (m: Mailbox) => (
+                <div className="flex items-center gap-2">
+                  <Mail className="w-4 h-4 text-text-secondary" />
+                  <span className="font-medium">{m.email}</span>
+                </div>
+              )},
+              { key: 'display_name', header: 'Display Name', render: (m: Mailbox) => (
+                <span className="text-text-secondary">{m.display_name || '—'}</span>
+              )},
+              { key: 'quota', header: 'Quota · Max storage for this mailbox', render: (m: Mailbox) => (
+                <span className="text-text-secondary">{formatBytes(m.quota)}</span>
+              )},
+              { key: 'status', header: 'Status', render: (m: Mailbox) => (
+                <StatusBadge status={m.status} />
+              )},
+              { key: 'actions', header: 'Actions', render: (m: Mailbox) => (
+                <div className="flex items-center gap-3">
+                  <Button variant="ghost" size="sm" onClick={() => openEditModal(m)}>Edit</Button>
+                  <Button variant="danger" size="sm" onClick={() => handleDelete('mailbox', m.id)}>Delete</Button>
+                </div>
+              )},
+            ]}
+            data={mailboxes}
+            keyField="id"
+            emptyMessage={
+              <div className="p-8 text-center">
+                <Mail className="w-12 h-12 mx-auto text-text-secondary/50 mb-3" />
+                <p className="text-sm text-text-secondary mb-3">No mailboxes</p>
+                <Button variant="primary" size="sm" onClick={() => openModal('mailbox')}>Create your first mailbox</Button>
+              </div>
+            }
+          />
         </Card>
       )}
 
@@ -222,31 +300,28 @@ export default function EmailDashboard() {
               Create Alias
             </Button>
           </div>
-          <table className="w-full">
-            <thead className="bg-accent/50">
-              <tr>
-                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Source</th>
-                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Destination</th>
-                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {aliases.map((a) => (
-                <tr key={a.id} className="hover:bg-accent/30 transition-colors">
-                  <td className="p-3 font-mono text-sm">{a.source}@{a.domain}</td>
-                  <td className="p-3 text-text-secondary">{a.destination}</td>
-                  <td className="p-3">
-                    <button onClick={() => handleDelete('alias', a.id)} className="text-xs text-danger hover:underline">Delete</button>
-                  </td>
-                </tr>
-              ))}
-              {aliases.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="p-8 text-center text-text-secondary text-sm">No aliases</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          <Table
+            columns={[
+              { key: 'source', header: 'Source', render: (a: Alias) => (
+                <span className="font-mono text-sm">{a.source}@{a.domain}</span>
+              )},
+              { key: 'destination', header: 'Destination', render: (a: Alias) => (
+                <span className="text-text-secondary">{a.destination}</span>
+              )},
+              { key: 'actions', header: 'Actions', render: (a: Alias) => (
+                <Button variant="danger" size="sm" onClick={() => handleDelete('alias', a.id)}>Delete</Button>
+              )},
+            ]}
+            data={aliases}
+            keyField="id"
+            emptyMessage={
+              <div className="p-8 text-center">
+                <Mail className="w-12 h-12 mx-auto text-text-secondary/50 mb-3" />
+                <p className="text-sm text-text-secondary mb-3">No aliases</p>
+                <Button variant="primary" size="sm" onClick={() => openModal('alias')}>Create your first alias</Button>
+              </div>
+            }
+          />
         </Card>
       )}
 
@@ -259,31 +334,28 @@ export default function EmailDashboard() {
               Create Forwarder
             </Button>
           </div>
-          <table className="w-full">
-            <thead className="bg-accent/50">
-              <tr>
-                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Source</th>
-                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Destination</th>
-                <th className="text-left p-3 text-xs font-medium text-text-secondary uppercase">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {forwarders.map((f) => (
-                <tr key={f.id} className="hover:bg-accent/30 transition-colors">
-                  <td className="p-3 font-mono text-sm">{f.source}@{f.domain}</td>
-                  <td className="p-3 text-text-secondary">{f.destination}</td>
-                  <td className="p-3">
-                    <button onClick={() => handleDelete('forwarder', f.id)} className="text-xs text-danger hover:underline">Delete</button>
-                  </td>
-                </tr>
-              ))}
-              {forwarders.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="p-8 text-center text-text-secondary text-sm">No forwarders</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+          <Table
+            columns={[
+              { key: 'source', header: 'Source', render: (f: Forwarder) => (
+                <span className="font-mono text-sm">{f.source}@{f.domain}</span>
+              )},
+              { key: 'destination', header: 'Destination', render: (f: Forwarder) => (
+                <span className="text-text-secondary">{f.destination}</span>
+              )},
+              { key: 'actions', header: 'Actions', render: (f: Forwarder) => (
+                <Button variant="danger" size="sm" onClick={() => handleDelete('forwarder', f.id)}>Delete</Button>
+              )},
+            ]}
+            data={forwarders}
+            keyField="id"
+            emptyMessage={
+              <div className="p-8 text-center">
+                <Mail className="w-12 h-12 mx-auto text-text-secondary/50 mb-3" />
+                <p className="text-sm text-text-secondary mb-3">No forwarders</p>
+                <Button variant="primary" size="sm" onClick={() => openModal('forwarder')}>Create your first forwarder</Button>
+              </div>
+            }
+          />
         </Card>
       )}
 
@@ -298,17 +370,19 @@ export default function EmailDashboard() {
               type="text"
               placeholder="yourdomain.com"
               className="flex-1 h-10 px-3 bg-background border border-border rounded text-sm"
-              value={deliverabilityDomain}
-              onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
+              value={catchAllDomain}
+              onChange={(e) => setCatchAllDomain(e.target.value)}
             />
             <input
               type="text"
               placeholder="catchall@external.com"
               className="flex-1 h-10 px-3 bg-background border border-border rounded text-sm"
-              value={formData.forward_to}
-              onChange={(e) => setFormData({ ...formData, forward_to: e.target.value })}
+              value={catchAllForwardTo}
+              onChange={(e) => setCatchAllForwardTo(e.target.value)}
             />
-            <Button>Set Catch-All</Button>
+            <Button onClick={saveCatchAll} disabled={catchAllLoading || !catchAllDomain || !catchAllForwardTo}>
+              {catchAllLoading ? 'Saving...' : 'Set Catch-All'}
+            </Button>
           </div>
         </Card>
       )}
@@ -335,10 +409,10 @@ export default function EmailDashboard() {
           {deliverabilityResult && (
             <div className="grid grid-cols-2 gap-4">
               {[
-                { title: 'SPF', result: deliverabilityResult.spf },
-                { title: 'DKIM', result: deliverabilityResult.dkim },
-                { title: 'DMARC', result: deliverabilityResult.dmarc },
-                { title: 'PTR', result: deliverabilityResult.ptr },
+                { title: 'SPF · Says which servers can send your email', result: deliverabilityResult.spf },
+                { title: 'DKIM · Digital signature proving email is genuine', result: deliverabilityResult.dkim },
+                { title: 'DMARC · Policy for unverified emails', result: deliverabilityResult.dmarc },
+                { title: 'PTR · Reverse DNS proving server identity', result: deliverabilityResult.ptr },
               ].map(({ title, result }) => (
                 <Card key={title}>
                   <div className="flex items-center gap-3 mb-3">
@@ -421,7 +495,7 @@ export default function EmailDashboard() {
                 />
               </FormGroup>
               <FormGroup>
-                <Label>Source (local part)</Label>
+                <Label>Source · Part before the @ in email</Label>
                 <input
                   type="text"
                   value={formData.source}
@@ -451,6 +525,68 @@ export default function EmailDashboard() {
           </div>
         </div>
       </Modal>
+
+      <Modal open={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Mailbox" size="sm">
+        <div className="space-y-4">
+          {editingMailbox && (
+            <>
+              <FormGroup>
+                <Label>Email</Label>
+                <input
+                  type="text"
+                  value={editingMailbox.email}
+                  disabled
+                  className="w-full h-10 px-3 bg-accent/50 border border-border rounded text-sm"
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Display Name</Label>
+                <input
+                  type="text"
+                  value={editFormData.display_name}
+                  onChange={(e) => setEditFormData({ ...editFormData, display_name: e.target.value })}
+                  placeholder="John Doe"
+                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Quota · Max storage in bytes</Label>
+                <input
+                  type="number"
+                  value={editFormData.quota}
+                  onChange={(e) => setEditFormData({ ...editFormData, quota: parseInt(e.target.value) || 0 })}
+                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Forward To</Label>
+                <input
+                  type="text"
+                  value={editFormData.forward_to}
+                  onChange={(e) => setEditFormData({ ...editFormData, forward_to: e.target.value })}
+                  placeholder="forward@otherdomain.com (leave empty to disable)"
+                  className="w-full h-10 px-3 bg-background border border-border rounded text-sm focus:outline-none focus:ring-2 focus:ring-primary/50"
+                />
+              </FormGroup>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="outline" onClick={() => setShowEditModal(false)}>Cancel</Button>
+                <Button onClick={handleEdit} loading={saving}>Save Changes</Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      <ConfirmModal
+        open={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={doDelete}
+        title="Delete Email Item"
+        description="Delete this mailbox/alias/forwarder? This cannot be undone."
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleting}
+      />
     </div>
   )
 }

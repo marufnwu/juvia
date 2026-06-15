@@ -3,13 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Folder, File, Upload, X, ChevronLeft, ChevronRight, Plus, Trash2,
   Download, Edit, Eye, Copy, RefreshCw, FolderPlus, FilePlus, MoreHorizontal,
-  ArrowUp
+  ArrowUp, Pencil, FolderOpen
 } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
-import { Modal } from '../../components/ui/Modal'
-import { Input, Label, FormGroup } from '../../components/ui/Input'
+import { Modal, ConfirmModal } from '../../components/ui/Modal'
+import { Input, Label, FormGroup, Switch } from '../../components/ui/Input'
 import { PageHeader } from '../../components/ui/Misc'
 import api from '../../lib/api'
 import { formatBytes, formatDate } from '../../lib/utils'
@@ -37,6 +37,13 @@ export default function FileManager() {
   const [showContextMenu, setShowContextMenu] = useState<{ x: number; y: number; file: FileItem } | null>(null)
   const [showNewFolderModal, setShowNewFolderModal] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
+  const [showRenameModal, setShowRenameModal] = useState(false)
+  const [renamingFile, setRenamingFile] = useState<FileItem | null>(null)
+  const [newFileName, setNewFileName] = useState('')
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [renaming, setRenaming] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   const loadFiles = useCallback(async (path: string) => {
     if (!websiteId) return
@@ -75,10 +82,11 @@ export default function FileManager() {
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files?.length || !websiteId) return
     setUploadProgress(true)
+    const file = e.target.files[0]
     const formData = new FormData()
     formData.append('path', currentPath)
-    formData.append('file_name', e.target.files[0].name)
-    formData.append('content', await e.target.files[0].text())
+    formData.append('file_name', file.name)
+    formData.append('content', file)
     try {
       await api.post(`/websites/${websiteId}/files/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -91,8 +99,15 @@ export default function FileManager() {
     }
   }
 
-  const handleDelete = async (fileName: string) => {
-    if (!confirm(`Delete ${fileName}?`)) return
+  const handleDelete = (fileName: string) => {
+    setConfirmDelete(fileName)
+  }
+
+  const doDelete = async () => {
+    if (!confirmDelete || !websiteId) return
+    const fileName = confirmDelete
+    setConfirmDelete(null)
+    setDeleting(true)
     try {
       await api.delete(`/websites/${websiteId}/files/delete`, {
         data: { path: currentPath ? `${currentPath}/${fileName}` : fileName },
@@ -100,6 +115,8 @@ export default function FileManager() {
       loadFiles(currentPath)
     } catch (err) {
       console.error(err)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -115,7 +132,12 @@ export default function FileManager() {
     try {
       const res = await api.get(`/websites/${websiteId}/files/edit?path=${encodeURIComponent(path)}`)
       const data = res.data.data as { content: string }
-      setFileContent(data.content || '')
+      const rawContent = data.content || ''
+      try {
+        setFileContent(atob(rawContent))
+      } catch {
+        setFileContent(rawContent)
+      }
       setEditingFile(fileName)
     } catch (err) {
       console.error(err)
@@ -126,7 +148,7 @@ export default function FileManager() {
     if (!websiteId || !editingFile) return
     const path = currentPath ? `${currentPath}/${editingFile}` : editingFile
     try {
-      await api.put(`/websites/${websiteId}/files/edit`, { path, content: fileContent })
+      await api.put(`/websites/${websiteId}/files/edit`, { path, content: btoa(fileContent) })
       setEditingFile(null)
     } catch (err) {
       console.error(err)
@@ -144,11 +166,50 @@ export default function FileManager() {
     }
   }
 
+  const handleCreateFolder = async () => {
+    if (!websiteId || !newFolderName) return
+    setCreatingFolder(true)
+    try {
+      const path = currentPath ? `${currentPath}/${newFolderName}` : newFolderName
+      await api.post(`/websites/${websiteId}/files/folder`, { path })
+      setShowNewFolderModal(false)
+      setNewFolderName('')
+      loadFiles(currentPath)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setCreatingFolder(false)
+    }
+  }
+
+  const openRenameModal = (file: FileItem) => {
+    setRenamingFile(file)
+    setNewFileName(file.name)
+    setShowRenameModal(true)
+  }
+
+  const handleRename = async () => {
+    if (!websiteId || !renamingFile || !newFileName) return
+    setRenaming(true)
+    try {
+      const oldPath = currentPath ? `${currentPath}/${renamingFile.name}` : renamingFile.name
+      const newPath = currentPath ? `${currentPath}/${newFileName}` : newFileName
+      await api.put(`/websites/${websiteId}/files/rename`, { old_path: oldPath, new_path: newPath })
+      setShowRenameModal(false)
+      setRenamingFile(null)
+      setNewFileName('')
+      loadFiles(currentPath)
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setRenaming(false)
+    }
+  }
+
   const toggleSelect = (fileName: string, e: React.MouseEvent) => {
     e.stopPropagation()
     const newSelected = new Set(selectedFiles)
     if (e.shiftKey && selectedFiles.size > 0) {
-      // Range select
     } else if (newSelected.has(fileName)) {
       newSelected.delete(fileName)
     } else {
@@ -182,42 +243,31 @@ export default function FileManager() {
 
       <Card padding="none">
         <div className="p-3 flex items-center gap-3 border-b border-border">
-          <button
-            onClick={navigateUp}
-            disabled={!currentPath}
-            className="p-2 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors disabled:opacity-50"
-          >
+          <Button variant="ghost" size="sm" onClick={navigateUp} disabled={!currentPath}>
             <ArrowUp className="w-4 h-4" />
-          </button>
+          </Button>
 
           <div className="flex items-center gap-2 text-sm">
-            <button onClick={() => loadFiles('')} className="hover:text-primary transition-colors">
+            <Button variant="ghost" size="sm" onClick={() => loadFiles('')}>
               root
-            </button>
+            </Button>
             {currentPath.split('/').map((part, i) => (
               <span key={i} className="flex items-center gap-2">
                 <span className="text-text-secondary">/</span>
-                <button
-                  onClick={() => loadFiles(currentPath.split('/').slice(0, i + 1).join('/'))}
-                  className="hover:text-primary transition-colors"
-                >
+                <Button variant="ghost" size="sm" onClick={() => loadFiles(currentPath.split('/').slice(0, i + 1).join('/'))}>
                   {part}
-                </button>
+                </Button>
               </span>
             ))}
           </div>
 
           <div className="flex-1" />
 
-          <label className="flex items-center gap-2 text-sm cursor-pointer">
-            <input
-              type="checkbox"
-              checked={showHidden}
-              onChange={(e) => setShowHidden(e.target.checked)}
-              className="w-4 h-4 rounded border-border"
-            />
-            <span className="text-text-secondary">Show hidden</span>
-          </label>
+          <Switch
+            checked={showHidden}
+            onChange={(e) => setShowHidden(e.target.checked)}
+            label="Show hidden"
+          />
 
           <label className="flex items-center gap-2 px-3 py-2 bg-primary text-white text-sm rounded cursor-pointer hover:bg-primary/90 transition-colors">
             <Upload className="w-4 h-4" />
@@ -225,25 +275,22 @@ export default function FileManager() {
             <input type="file" className="hidden" onChange={handleUpload} />
           </label>
 
-          <button
-            onClick={() => setShowNewFolderModal(true)}
-            className="p-2 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
-          >
+          <Button variant="outline" size="sm" onClick={() => setShowNewFolderModal(true)}>
             <FolderPlus className="w-4 h-4" />
-          </button>
+          </Button>
 
-          <button
-            onClick={() => loadFiles(currentPath)}
-            className="p-2 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
-          >
+          <Button variant="outline" size="sm" onClick={() => loadFiles(currentPath)}>
             <RefreshCw className="w-4 h-4" />
-          </button>
+          </Button>
         </div>
 
         {loading ? (
           <div className="p-8 text-center text-text-secondary">Loading...</div>
         ) : filteredFiles.length === 0 ? (
-          <div className="p-8 text-center text-text-secondary">No files found</div>
+          <div className="p-8 text-center text-text-secondary">
+            <FolderOpen className="w-10 h-10 mx-auto text-text-secondary/50 mb-3" />
+            <p>This directory is empty</p>
+          </div>
         ) : (
           <div className="divide-y divide-border">
             {filteredFiles.map((file) => (
@@ -274,34 +321,25 @@ export default function FileManager() {
                 <div className="flex items-center gap-1">
                   {file.type === 'file' && (
                     <>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleEdit(file.name) }}
-                        className="p-1 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
-                      >
+                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleEdit(file.name) }}>
                         <Edit className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDownload(file.name) }}
-                        className="p-1 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
-                      >
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleDownload(file.name) }}>
                         <Download className="w-3.5 h-3.5" />
-                      </button>
+                      </Button>
                     </>
                   )}
+                  <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); openRenameModal(file) }} title="Rename">
+                    <Pencil className="w-3.5 h-3.5" />
+                  </Button>
                   {(file.name.endsWith('.zip') || file.name.endsWith('.tar.gz')) && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleExtract(file.name) }}
-                      className="p-1 text-text-secondary hover:text-foreground hover:bg-accent rounded transition-colors"
-                    >
+                    <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleExtract(file.name) }}>
                       <Download className="w-3.5 h-3.5" />
-                    </button>
+                    </Button>
                   )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDelete(file.name) }}
-                    className="p-1 text-text-secondary hover:text-danger hover:bg-danger/10 rounded transition-colors"
-                  >
+                  <Button variant="danger" size="sm" onClick={(e) => { e.stopPropagation(); handleDelete(file.name) }}>
                     <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+                  </Button>
                 </div>
               </div>
             ))}
@@ -314,9 +352,9 @@ export default function FileManager() {
           <div className="w-3/4 max-h-3/4 bg-surface border border-border rounded-card shadow-xl flex flex-col">
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h3 className="font-semibold">{editingFile}</h3>
-              <button onClick={() => setEditingFile(null)} className="p-1 text-text-secondary hover:text-foreground">
+              <Button variant="ghost" onClick={() => setEditingFile(null)}>
                 <X className="w-4 h-4" />
-              </button>
+              </Button>
             </div>
             <textarea
               value={fileContent}
@@ -348,10 +386,46 @@ export default function FileManager() {
           </FormGroup>
           <div className="flex justify-end gap-3">
             <Button variant="outline" onClick={() => setShowNewFolderModal(false)}>Cancel</Button>
-            <Button onClick={() => setShowNewFolderModal(false)}>Create</Button>
+            <Button onClick={handleCreateFolder} loading={creatingFolder}>Create</Button>
           </div>
         </div>
       </Modal>
+
+      <Modal open={showRenameModal} onClose={() => setShowRenameModal(false)} title="Rename File" size="sm">
+        <div className="space-y-4">
+          {renamingFile && (
+            <>
+              <FormGroup>
+                <Label>Current Name</Label>
+                <Input value={renamingFile.name} disabled />
+              </FormGroup>
+              <FormGroup>
+                <Label>New Name</Label>
+                <Input
+                  value={newFileName}
+                  onChange={(e) => setNewFileName(e.target.value)}
+                  placeholder="new_name"
+                />
+              </FormGroup>
+              <div className="flex justify-end gap-3">
+                <Button variant="outline" onClick={() => setShowRenameModal(false)}>Cancel</Button>
+                <Button onClick={handleRename} loading={renaming} disabled={!newFileName || newFileName === renamingFile.name}>Rename</Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      <ConfirmModal
+        open={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={doDelete}
+        title="Delete File"
+        description={confirmDelete ? `Delete ${confirmDelete}?` : ''}
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleting}
+      />
     </div>
   )
 }

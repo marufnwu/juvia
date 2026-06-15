@@ -132,7 +132,7 @@ interface ConfirmModalProps {
   title: string
   description?: string
   confirmLabel?: string
-  variant?: 'danger' | 'primary'
+  variant?: 'danger' | 'primary' | 'warning'
   loading?: boolean
 }
 
@@ -155,6 +155,8 @@ export function ConfirmModal({
             'px-4 py-2 text-sm font-medium rounded transition-colors disabled:opacity-50',
             variant === 'danger'
               ? 'bg-danger text-white hover:bg-danger/90'
+              : variant === 'warning'
+              ? 'bg-warning text-white hover:bg-warning/90'
               : 'bg-primary text-white hover:bg-primary/90'
           )}
         >

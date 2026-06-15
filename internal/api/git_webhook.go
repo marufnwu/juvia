@@ -69,7 +69,7 @@ func gitWebhookHandler(cfg RouterConfig) gin.HandlerFunc {
 }
 
 func findWebsiteByWebhookToken(ctx context.Context, db *db.DB, token string) (*db.Website, error) {
-	websites, err := db.ListWebsites(ctx, "", "", "id", "asc", 1, 1000)
+	websites, err := db.ListWebsites(ctx, "", "", "id", "asc", 1, 1000, 0)
 	if err != nil {
 		return nil, err
 	}

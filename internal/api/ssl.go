@@ -23,6 +23,13 @@ func sslCheckHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
 		resp, err := cfg.AgentClient.Call(c.Request.Context(), "ssl.check", map[string]interface{}{
 			"domain": website.Domain,
 		})
@@ -53,6 +60,13 @@ func issueSSLHandler(cfg RouterConfig) gin.HandlerFunc {
 		website, err := cfg.DB.GetWebsiteByID(c.Request.Context(), id)
 		if err != nil {
 			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "website not found"))
+			return
+		}
+
+		ownerID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && *website.UserID != ownerID.(int64) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
 			return
 		}
 
@@ -120,6 +134,13 @@ func renewSSLHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		ownerID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && *website.UserID != ownerID.(int64) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
 		userID := getUserID(c)
 		task, _ := tasks.NewRunner(cfg.DB.DB, cfg.Log).CreateTask(c.Request.Context(), "renew_ssl", userID)
 
@@ -180,6 +201,13 @@ func removeSSLHandler(cfg RouterConfig) gin.HandlerFunc {
 		website, err := cfg.DB.GetWebsiteByID(c.Request.Context(), id)
 		if err != nil {
 			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "website not found"))
+			return
+		}
+
+		ownerID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && *website.UserID != ownerID.(int64) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
 			return
 		}
 

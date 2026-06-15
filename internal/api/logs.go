@@ -20,6 +20,13 @@ func accessLogHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
 		logPath := "/var/log/juvia/nginx/" + website.Domain + ".access.log"
 
 		content, err := readLastLines(logPath, lines)
@@ -53,6 +60,13 @@ func errorLogHandler(cfg RouterConfig) gin.HandlerFunc {
 		website, err := cfg.DB.GetWebsiteByID(c.Request.Context(), parseID(id))
 		if err != nil {
 			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "website not found"))
+			return
+		}
+
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
 			return
 		}
 

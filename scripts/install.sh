@@ -274,10 +274,6 @@ if command -v pg_ctl >/dev/null 2>&1; then
     systemctl enable postgresql 2>/dev/null || true
     systemctl start postgresql 2>/dev/null || true
 fi
-if command -v named >/dev/null 2>&1; then
-    systemctl enable bind9 2>/dev/null || true
-    systemctl start bind9 2>/dev/null || true
-fi
 
 echo ""
 echo "Starting web server..."
@@ -323,7 +319,12 @@ apt-get install -y postfix dovecot-imapd dovecot-pop3d rspamd
 
 echo ""
 echo "Installing DNS server..."
-apt-get install -y bind9
+apt-get install -y bind9 bind9utils
+
+echo ""
+echo "Starting DNS server..."
+systemctl enable bind9 2>/dev/null || true
+systemctl start bind9 2>/dev/null || true
 
 echo ""
 echo "Setting up Juvia runtime directories and permissions..."

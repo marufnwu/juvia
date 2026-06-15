@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Trash2, RotateCcw, AlertTriangle, Clock, Globe } from 'lucide-react'
+import { Button } from '../../components/ui/Button'
 import { Card } from '../../components/ui/Card'
 import { Badge, StatusBadge } from '../../components/ui/Badge'
 import { Table } from '../../components/ui/Table'
@@ -8,6 +9,7 @@ import { PageHeader } from '../../components/ui/Misc'
 import { Modal, ConfirmModal } from '../../components/ui/Modal'
 import api from '../../lib/api'
 import { formatDate, timeAgo } from '../../lib/utils'
+import { useApiError } from '../../hooks/useToast'
 
 interface TrashedWebsite {
   id: number
@@ -18,12 +20,15 @@ interface TrashedWebsite {
 }
 
 export default function Trash() {
+  const showError = useApiError()
   const [websites, setWebsites] = useState<TrashedWebsite[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedSite, setSelectedSite] = useState<TrashedWebsite | null>(null)
   const [showRestoreModal, setShowRestoreModal] = useState(false)
   const [showDeleteModal, setShowDeleteModal] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [confirmPurgeAll, setConfirmPurgeAll] = useState(false)
+  const [purging, setPurging] = useState(false)
 
   useEffect(() => {
     loadTrash()
@@ -47,7 +52,7 @@ export default function Trash() {
       loadTrash()
       setShowRestoreModal(false)
     } catch (err: any) {
-      alert(err.response?.data?.error?.user_message || 'Failed to restore')
+      showError(err, 'Failed to restore')
     } finally {
       setActionLoading(false)
     }
@@ -59,17 +64,24 @@ export default function Trash() {
       setWebsites(websites.filter((w) => w.id !== id))
       setShowDeleteModal(false)
     } catch (err: any) {
-      alert(err.response?.data?.error?.user_message || 'Failed to delete')
+      showError(err, 'Failed to delete')
     }
   }
 
-  const handlePurgeAll = async () => {
-    if (!confirm('Permanently delete all trashed websites? This cannot be undone.')) return
+  const handlePurgeAll = () => {
+    setConfirmPurgeAll(true)
+  }
+
+  const doPurgeAll = async () => {
+    setConfirmPurgeAll(false)
+    setPurging(true)
     try {
       await api.delete('/websites/trash/purge')
       setWebsites([])
     } catch (err: any) {
-      alert(err.response?.data?.error?.user_message || 'Failed to purge')
+      showError(err, 'Failed to purge')
+    } finally {
+      setPurging(false)
     }
   }
 
@@ -110,27 +122,29 @@ export default function Trash() {
       width: '160px',
       render: (site: TrashedWebsite) => (
         <div className="flex items-center gap-2">
-          <button
+          <Button
+            variant="outline"
+            size="sm"
             onClick={(e) => {
               e.stopPropagation()
               setSelectedSite(site)
               setShowRestoreModal(true)
             }}
-            className="px-3 py-1.5 text-xs font-medium border border-border rounded hover:bg-accent transition-colors"
           >
-            <RotateCcw className="w-3.5 h-3.5 inline mr-1" />
+            <RotateCcw className="w-3.5 h-3.5 mr-1" />
             Restore
-          </button>
-          <button
+          </Button>
+          <Button
+            variant="danger"
+            size="sm"
             onClick={(e) => {
               e.stopPropagation()
               setSelectedSite(site)
               setShowDeleteModal(true)
             }}
-            className="px-3 py-1.5 text-xs font-medium border border-danger/50 text-danger rounded hover:bg-danger/10 transition-colors"
           >
             Delete
-          </button>
+          </Button>
         </div>
       ),
     },
@@ -147,13 +161,10 @@ export default function Trash() {
         ]}
         actions={
           websites.length > 0 && (
-            <button
-              onClick={handlePurgeAll}
-              className="inline-flex items-center gap-2 px-4 py-2 border border-danger/50 text-danger text-sm font-medium rounded hover:bg-danger/10 transition-colors"
-            >
-              <Trash2 className="w-4 h-4" />
+            <Button variant="danger" onClick={handlePurgeAll}>
+              <Trash2 className="w-4 h-4 mr-2" />
               Purge All
-            </button>
+            </Button>
           )
         }
       />
@@ -188,6 +199,17 @@ export default function Trash() {
         confirmLabel="Delete Forever"
         variant="danger"
         loading={actionLoading}
+      />
+
+      <ConfirmModal
+        open={confirmPurgeAll}
+        onClose={() => setConfirmPurgeAll(false)}
+        onConfirm={doPurgeAll}
+        title="Empty Trash"
+        description="Permanently delete all trashed websites? This cannot be undone."
+        confirmLabel="Empty Trash"
+        variant="danger"
+        loading={purging}
       />
     </div>
   )

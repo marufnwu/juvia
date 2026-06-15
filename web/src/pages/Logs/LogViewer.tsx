@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef } from 'react'
+import { useParams } from 'react-router-dom'
 import { FileText, Download, Search, Pause, Play, RefreshCw, Filter } from 'lucide-react'
 import { Card } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import { PageHeader } from '../../components/ui/Misc'
-import { Input } from '../../components/ui/Input'
+import { Input, Select } from '../../components/ui/Input'
 import api from '../../lib/api'
 import { cn } from '../../lib/utils'
 
@@ -15,12 +16,16 @@ interface LogEntry {
   source?: string
 }
 
-export default function LogViewer() {
+interface LogViewerProps {
+  websiteId?: number
+  logType?: 'access' | 'error' | 'system'
+}
+
+export default function LogViewer({ websiteId, logType = 'system' }: LogViewerProps) {
   const [logs, setLogs] = useState<LogEntry[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('')
   const [levelFilter, setLevelFilter] = useState<string>('')
-  const [isLive, setIsLive] = useState(true)
   const [autoRefresh, setAutoRefresh] = useState(false)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -30,11 +35,16 @@ export default function LogViewer() {
       const interval = setInterval(loadLogs, 3000)
       return () => clearInterval(interval)
     }
-  }, [autoRefresh])
+  }, [autoRefresh, websiteId, logType])
 
   const loadLogs = async () => {
     try {
-      const res = await api.get('/logs/system')
+      let res
+      if (websiteId) {
+        res = await api.get(`/websites/${websiteId}/logs/${logType}`)
+      } else {
+        res = await api.get('/logs/system')
+      }
       if (res.data.success) {
         setLogs(res.data.data || [])
       }
@@ -51,26 +61,41 @@ export default function LogViewer() {
     return matchesSearch && matchesLevel
   })
 
-  const levelColors = {
+  const levelColors: Record<string, string> = {
     info: 'text-primary',
     warn: 'text-warning',
     error: 'text-danger',
   }
 
-  const levelBgColors = {
+  const levelBgColors: Record<string, string> = {
     info: 'bg-primary/10',
     warn: 'bg-warning/10',
     error: 'bg-danger/10',
   }
 
+  const getTitle = () => {
+    if (websiteId) {
+      return logType === 'access' ? 'Access Logs · Every visit to your website' : 'Error Logs · Problems your site encountered'
+    }
+    return 'System Logs · Server internal activity'
+  }
+
+  const getDescription = () => {
+    if (websiteId) {
+      return logType === 'access' ? 'Website access log monitoring' : 'Website error log monitoring'
+    }
+    return 'Real-time server log monitoring'
+  }
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title="System Logs"
-        description="Real-time server log monitoring"
+        title={getTitle()}
+        description={getDescription()}
         breadcrumbs={[
           { label: 'Logs' },
-        ]}
+          websiteId ? { label: `Website #${websiteId}` } : null,
+        ].filter(Boolean) as { label: string; href?: string }[]}
         actions={
           <div className="flex items-center gap-2">
             <Button
@@ -98,16 +123,16 @@ export default function LogViewer() {
               placeholder="Search logs..."
             />
           </div>
-          <select
+          <Select
             value={levelFilter}
             onChange={(e) => setLevelFilter(e.target.value)}
-            className="h-9 px-3 bg-surface border border-border rounded text-sm"
+            className="w-48"
           >
             <option value="">All Levels</option>
             <option value="info">Info</option>
             <option value="warn">Warning</option>
             <option value="error">Error</option>
-          </select>
+          </Select>
           <div className="flex-1" />
           <div className="flex items-center gap-4 text-xs text-text-secondary">
             <span className="flex items-center gap-1">
@@ -126,16 +151,19 @@ export default function LogViewer() {
           {loading ? (
             <div className="p-8 text-center text-text-secondary">Loading logs...</div>
           ) : filteredLogs.length === 0 ? (
-            <div className="p-8 text-center text-text-secondary">No logs found</div>
+            <div className="p-8 text-center text-text-secondary">
+              <FileText className="w-10 h-10 mx-auto text-text-secondary/50 mb-3" />
+              <p>No logs found</p>
+            </div>
           ) : (
             <div className="divide-y divide-border">
               {filteredLogs.map((log, i) => (
                 <div
                   key={i}
-                  className={cn('flex items-start gap-3 p-3 hover:bg-accent/30 transition-colors', levelBgColors[log.level])}
+                  className={cn('flex items-start gap-3 p-3 hover:bg-accent/30 transition-colors', levelBgColors[log.level] || '')}
                 >
                   <span className="text-text-secondary shrink-0">{log.timestamp}</span>
-                  <span className={cn('w-16 font-medium shrink-0 uppercase', levelColors[log.level])}>
+                  <span className={cn('w-16 font-medium shrink-0 uppercase', levelColors[log.level] || '')}>
                     {log.level}
                   </span>
                   {log.source && (

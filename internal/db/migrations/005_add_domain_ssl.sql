@@ -1,0 +1,6 @@
+-- Per-domain SSL support
+ALTER TABLE domains ADD COLUMN ssl_enabled BOOLEAN DEFAULT FALSE;
+ALTER TABLE domains ADD COLUMN ssl_expiry TIMESTAMP;
+ALTER TABLE domains ADD COLUMN ssl_cert_type VARCHAR(20) DEFAULT '';
+ALTER TABLE domains ADD COLUMN ssl_cert_path VARCHAR(500) DEFAULT '';
+ALTER TABLE domains ADD COLUMN ssl_key_path VARCHAR(500) DEFAULT '';

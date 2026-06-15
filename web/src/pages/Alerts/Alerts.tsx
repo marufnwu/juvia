@@ -10,6 +10,7 @@ import { Input, Label, Select, FormGroup, Switch } from '../../components/ui/Inp
 import api from '../../lib/api'
 import { formatDate, timeAgo } from '../../lib/utils'
 import { cn } from '../../lib/utils'
+import { useApiError } from '../../hooks/useToast'
 
 interface Alert {
   id: number
@@ -22,12 +23,26 @@ interface Alert {
 }
 
 export default function Alerts() {
+  const showError = useApiError()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [loading, setLoading] = useState(true)
   const [showSettingsModal, setShowSettingsModal] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [alertSettings, setAlertSettings] = useState({
+    website_down_enabled: true,
+    website_down_threshold: 5,
+    ssl_expiry_enabled: true,
+    ssl_expiry_days: 14,
+    disk_usage_enabled: true,
+    disk_usage_threshold: 80,
+    backup_overdue_enabled: true,
+    backup_overdue_days: 7,
+    service_down_enabled: true,
+  })
 
   useEffect(() => {
     loadAlerts()
+    loadSettings()
   }, [])
 
   const loadAlerts = async () => {
@@ -38,6 +53,26 @@ export default function Alerts() {
       console.error(err)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadSettings = async () => {
+    try {
+      const res = await api.get('/alerts/settings')
+      const data = res.data.data || {}
+      setAlertSettings({
+        website_down_enabled: data.website_down_enabled ?? true,
+        website_down_threshold: data.website_down_threshold ?? 5,
+        ssl_expiry_enabled: data.ssl_expiry_enabled ?? true,
+        ssl_expiry_days: data.ssl_expiry_days ?? 14,
+        disk_usage_enabled: data.disk_usage_enabled ?? true,
+        disk_usage_threshold: data.disk_usage_threshold ?? 80,
+        backup_overdue_enabled: data.backup_overdue_enabled ?? true,
+        backup_overdue_days: data.backup_overdue_days ?? 7,
+        service_down_enabled: data.service_down_enabled ?? true,
+      })
+    } catch (err) {
+      console.error(err)
     }
   }
 
@@ -56,6 +91,18 @@ export default function Alerts() {
       setAlerts(alerts.filter((a) => a.id !== id))
     } catch (err) {
       console.error(err)
+    }
+  }
+
+  const saveSettings = async () => {
+    setSaving(true)
+    try {
+      await api.put('/alerts/settings', alertSettings)
+      setShowSettingsModal(false)
+    } catch (err: any) {
+      showError(err, 'Failed to save alert settings')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -175,54 +222,100 @@ export default function Alerts() {
       >
         <div className="space-y-6">
           <FormGroup>
-            <Label>CPU Alert Threshold</Label>
+            <Label>Website Down Alert · Notify when site stops responding</Label>
             <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min="50"
-                max="100"
-                defaultValue="90"
-                className="flex-1"
+              <Switch
+                checked={alertSettings.website_down_enabled}
+                onChange={(e) => setAlertSettings({ ...alertSettings, website_down_enabled: e.target.checked })}
               />
-              <span className="text-sm font-mono w-12">90%</span>
+              <span className="text-sm">Enabled</span>
+              <div className="flex items-center gap-2 ml-4">
+                <span className="text-sm text-text-secondary">Threshold:</span>
+                <Input
+                  type="number"
+                  value={alertSettings.website_down_threshold}
+                  onChange={(e) => setAlertSettings({ ...alertSettings, website_down_threshold: parseInt(e.target.value) || 5 })}
+                  className="w-20"
+                />
+                <span className="text-sm text-text-secondary">checks</span>
+              </div>
             </div>
           </FormGroup>
           <FormGroup>
-            <Label>Memory Alert Threshold</Label>
+            <Label>SSL Expiry Alert · Warn before cert expires</Label>
             <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min="50"
-                max="100"
-                defaultValue="85"
-                className="flex-1"
+              <Switch
+                checked={alertSettings.ssl_expiry_enabled}
+                onChange={(e) => setAlertSettings({ ...alertSettings, ssl_expiry_enabled: e.target.checked })}
               />
-              <span className="text-sm font-mono w-12">85%</span>
+              <span className="text-sm">Enabled</span>
+              <div className="flex items-center gap-2 ml-4">
+                <span className="text-sm text-text-secondary">Warn</span>
+                <Input
+                  type="number"
+                  value={alertSettings.ssl_expiry_days}
+                  onChange={(e) => setAlertSettings({ ...alertSettings, ssl_expiry_days: parseInt(e.target.value) || 14 })}
+                  className="w-20"
+                />
+                <span className="text-sm text-text-secondary">days before expiry</span>
+              </div>
             </div>
           </FormGroup>
           <FormGroup>
-            <Label>Disk Alert Threshold</Label>
+            <Label>Disk Usage Alert · Alert when storage fills up</Label>
             <div className="flex items-center gap-3">
-              <input
-                type="range"
-                min="50"
-                max="100"
-                defaultValue="80"
-                className="flex-1"
+              <Switch
+                checked={alertSettings.disk_usage_enabled}
+                onChange={(e) => setAlertSettings({ ...alertSettings, disk_usage_enabled: e.target.checked })}
               />
-              <span className="text-sm font-mono w-12">80%</span>
+              <span className="text-sm">Enabled</span>
+              <div className="flex items-center gap-2 ml-4">
+                <span className="text-sm text-text-secondary">Threshold:</span>
+                <input
+                  type="range"
+                  min="50"
+                  max="100"
+                  value={alertSettings.disk_usage_threshold}
+                  onChange={(e) => setAlertSettings({ ...alertSettings, disk_usage_threshold: parseInt(e.target.value) })}
+                  className="flex-1"
+                />
+                <span className="text-sm font-mono w-12">{alertSettings.disk_usage_threshold}%</span>
+              </div>
             </div>
           </FormGroup>
           <FormGroup>
-            <Label>Website Response Timeout</Label>
-            <div className="flex items-center gap-2">
-              <Input type="number" defaultValue="3" className="w-20" />
-              <span className="text-sm text-text-secondary">seconds</span>
+            <Label>Backup Overdue Alert · Alert when no recent backup</Label>
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={alertSettings.backup_overdue_enabled}
+                onChange={(e) => setAlertSettings({ ...alertSettings, backup_overdue_enabled: e.target.checked })}
+              />
+              <span className="text-sm">Enabled</span>
+              <div className="flex items-center gap-2 ml-4">
+                <span className="text-sm text-text-secondary">After</span>
+                <Input
+                  type="number"
+                  value={alertSettings.backup_overdue_days}
+                  onChange={(e) => setAlertSettings({ ...alertSettings, backup_overdue_days: parseInt(e.target.value) || 7 })}
+                  className="w-20"
+                />
+                <span className="text-sm text-text-secondary">days without backup</span>
+              </div>
+            </div>
+          </FormGroup>
+          <FormGroup>
+            <Label>Service Down Alert · Alert when service stops</Label>
+            <div className="flex items-center gap-3">
+              <Switch
+                checked={alertSettings.service_down_enabled}
+                onChange={(e) => setAlertSettings({ ...alertSettings, service_down_enabled: e.target.checked })}
+              />
+              <span className="text-sm">Alert when a system service stops</span>
             </div>
           </FormGroup>
           <div className="flex justify-end gap-3 pt-2">
             <Button variant="outline" onClick={() => setShowSettingsModal(false)}>Cancel</Button>
-            <Button onClick={() => setShowSettingsModal(false)}>Save Settings</Button>
+            <Button onClick={saveSettings} loading={saving}>Save Settings</Button>
           </div>
         </div>
       </Modal>

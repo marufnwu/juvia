@@ -1,5 +1,9 @@
-import { useEffect, useState } from 'react'
-import { Terminal as TerminalIcon, Plus, AlertTriangle } from 'lucide-react'
+import { useEffect, useState, useRef } from 'react'
+import { Terminal as TerminalIcon, Plus, AlertTriangle, X } from 'lucide-react'
+import { Terminal as XTerminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import '@xterm/xterm/css/xterm.css'
+import { useApiError } from '../../hooks/useToast'
 import { Card, CardHeader, CardTitle, CardDescription } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
@@ -20,10 +24,19 @@ export default function Terminal() {
   const [sessions, setSessions] = useState<TerminalSession[]>([])
   const [loading, setLoading] = useState(true)
   const [activeSession, setActiveSession] = useState<string | null>(null)
+  const [activeTerminal, setActiveTerminal] = useState<XTerminal | null>(null)
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
   const [showRootWarning, setShowRootWarning] = useState(false)
+  const termRef = useRef<HTMLDivElement>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+  const handleError = useApiError()
 
   useEffect(() => {
     loadSessions()
+    return () => {
+      wsRef.current?.close()
+      activeTerminal?.dispose()
+    }
   }, [])
 
   const loadSessions = async () => {
@@ -37,6 +50,99 @@ export default function Terminal() {
     }
   }
 
+  const connectToSession = (sessionId: string) => {
+    wsRef.current?.close()
+    activeTerminal?.dispose()
+
+    const term = new XTerminal({
+      theme: {
+        background: '#0d1117',
+        foreground: '#e6edf3',
+        cursor: '#e6edf3',
+        cursorAccent: '#0d1117',
+        selectionBackground: '#264f78',
+        black: '#0d1117',
+        red: '#ff7b72',
+        green: '#3fb950',
+        yellow: '#d29922',
+        blue: '#58a6ff',
+        magenta: '#bc8cff',
+        cyan: '#39c5cf',
+        white: '#e6edf3',
+        brightBlack: '#484f58',
+        brightRed: '#ffa198',
+        brightGreen: '#56d364',
+        brightYellow: '#e3b341',
+        brightBlue: '#79c0ff',
+        brightMagenta: '#d2a8ff',
+        brightCyan: '#56d4dd',
+        brightWhite: '#f0f6fc',
+      },
+      fontFamily: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace',
+      fontSize: 14,
+      cursorBlink: true,
+    })
+
+    const fitAddon = new FitAddon()
+    term.loadAddon(fitAddon)
+
+    if (termRef.current) {
+      termRef.current.innerHTML = ''
+      term.open(termRef.current)
+      fitAddon.fit()
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/v1/terminal/${sessionId}`)
+    wsRef.current = ws
+
+    ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        if (msg.type === 'output') {
+          term.write(msg.data)
+        }
+      } catch {
+        term.write(event.data)
+      }
+    }
+
+    ws.onclose = () => {
+      term.write('\r\n\x1b[33m[Session closed]\x1b[0m\r\n')
+    }
+
+    ws.onerror = () => {
+      term.write('\r\n\x1b[31m[Connection error]\x1b[0m\r\n')
+    }
+
+    term.onData((data: string) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'input', data }))
+      }
+    })
+
+    const resizeHandler = () => {
+      fitAddon.fit()
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }))
+      }
+    }
+    window.addEventListener('resize', resizeHandler)
+
+    const origDispose = term.dispose.bind(term)
+    term.dispose = () => {
+      window.removeEventListener('resize', resizeHandler)
+      origDispose()
+    }
+
+    setActiveTerminal(term)
+    setActiveSessionId(sessionId)
+  }
+
   const createSession = async (type: 'root' | 'site', siteId?: string) => {
     if (type === 'root') {
       setShowRootWarning(true)
@@ -45,39 +151,47 @@ export default function Terminal() {
     try {
       const res = await api.post('/terminal/session', { type, website_id: siteId })
       if (res.data.success) {
-        setActiveSession(res.data.data.id)
+        const sessionId = res.data.data.id
+        setActiveSession(sessionId)
         loadSessions()
+        connectToSession(sessionId)
       }
     } catch (err) {
-      console.error(err)
+      handleError(err, 'Failed to create terminal session')
     }
   }
 
   const closeSession = async (id: string) => {
     try {
       await api.delete(`/terminal/sessions/${id}`)
-      if (activeSession === id) setActiveSession(null)
+      if (activeSession === id) {
+        wsRef.current?.close()
+        activeTerminal?.dispose()
+        setActiveSession(null)
+        setActiveTerminal(null)
+        setActiveSessionId(null)
+      }
       loadSessions()
     } catch (err) {
-      console.error(err)
+      handleError(err, 'Failed to close session')
     }
   }
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Terminal"
+        title="Terminal · Command-line for server management"
         description="Interactive server terminal access"
         breadcrumbs={[{ label: 'Terminal' }]}
         actions={
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => createSession('site')}>
               <Plus className="w-4 h-4 mr-2" />
-              New Site Terminal
+              Site Terminal · Terminal for one website
             </Button>
             <Button variant="outline" onClick={() => createSession('root')}>
               <AlertTriangle className="w-4 h-4 mr-2" />
-              New Root Terminal
+              Root Terminal · Full admin access (use carefully)
             </Button>
           </div>
         }
@@ -141,7 +255,7 @@ export default function Terminal() {
                     <div className="flex items-center gap-2">
                       <p className="font-medium text-sm">{session.name}</p>
                       {session.type === 'root' && (
-                        <Badge variant="danger">ROOT</Badge>
+                        <Badge variant="danger">ROOT · Super-admin account</Badge>
                       )}
                     </div>
                     <p className="text-xs text-text-secondary mt-0.5">
@@ -154,7 +268,7 @@ export default function Terminal() {
                     {session.status}
                   </Badge>
                   {session.status === 'active' ? (
-                    <Button size="sm" variant="outline">Connect</Button>
+                    <Button size="sm" variant="outline" onClick={() => { setActiveSession(session.id); connectToSession(session.id) }}>Connect</Button>
                   ) : (
                     <Button size="sm" variant="outline" onClick={() => closeSession(session.id)}>
                       Delete
@@ -166,6 +280,30 @@ export default function Terminal() {
           )}
         </div>
       </Card>
+
+      {activeSession && (
+        <Card className="bg-[#0d1117] border-border">
+          <div className="flex items-center justify-between p-3 border-b border-border/50">
+            <div className="flex items-center gap-2">
+              <TerminalIcon className="w-4 h-4 text-text-secondary" />
+              <span className="text-sm font-medium text-white">Terminal Session</span>
+              {activeSessionId && (
+                <Badge variant="success" className="text-xs">Connected</Badge>
+              )}
+            </div>
+            <Button variant="ghost" size="icon" onClick={() => {
+              wsRef.current?.close()
+              activeTerminal?.dispose()
+              setActiveSession(null)
+              setActiveTerminal(null)
+              setActiveSessionId(null)
+            }}>
+              <X className="w-4 h-4" />
+            </Button>
+          </div>
+          <div ref={termRef} className="w-full h-[500px] bg-[#0d1117] p-1" />
+        </Card>
+      )}
 
       <Card>
         <CardHeader>

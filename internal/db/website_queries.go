@@ -56,7 +56,7 @@ type ListWebsitesResult struct {
 	Total    int
 }
 
-func (db *DB) ListWebsites(ctx context.Context, status string, search string, sort string, order string, page int, limit int) (*ListWebsitesResult, error) {
+func (db *DB) ListWebsites(ctx context.Context, status string, search string, sort string, order string, page int, limit int, userID int64) (*ListWebsitesResult, error) {
 	if page < 1 {
 		page = 1
 	}
@@ -82,6 +82,10 @@ func (db *DB) ListWebsites(ctx context.Context, status string, search string, so
 	if search != "" {
 		whereClause += " AND domain LIKE ?"
 		args = append(args, "%"+search+"%")
+	}
+	if userID > 0 {
+		whereClause += " AND user_id = ?"
+		args = append(args, userID)
 	}
 
 	var total int
@@ -248,6 +252,16 @@ func (db *DB) UpdateWebsiteSSL(ctx context.Context, id int64, enabled bool, expi
 	return nil
 }
 
+func (db *DB) UpdateDomainSSL(ctx context.Context, id int64, enabled bool, expiry *time.Time, certType, certPath, keyPath string) error {
+	_, err := db.ExecContext(ctx,
+		`UPDATE domains SET ssl_enabled = ?, ssl_expiry = ?, ssl_cert_type = ?, ssl_cert_path = ?, ssl_key_path = ? WHERE id = ?`,
+		enabled, expiry, certType, certPath, keyPath, id)
+	if err != nil {
+		return fmt.Errorf("update domain ssl: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) CreateZone(ctx context.Context, websiteID int64, domain string) (*Zone, error) {
 	result, err := db.ExecContext(ctx,
 		`INSERT INTO zones (website_id, domain, serial) VALUES (?, ?, 1)`,
@@ -261,7 +275,23 @@ func (db *DB) CreateZone(ctx context.Context, websiteID int64, domain string) (*
 	if err := row.Scan(&z.ID, &z.WebsiteID, &z.Domain, &z.Serial, &z.CreatedAt, &z.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("get zone: %w", err)
 	}
-	return&z, nil
+	return &z, nil
+}
+
+func (db *DB) CreateZoneManual(ctx context.Context, domain string) (*Zone, error) {
+	result, err := db.ExecContext(ctx,
+		`INSERT INTO zones (website_id, domain, serial) VALUES (NULL, ?, 1)`,
+		domain)
+	if err != nil {
+		return nil, fmt.Errorf("create zone manual: %w", err)
+	}
+	id, _ := result.LastInsertId()
+	var z Zone
+	row := db.QueryRowContext(ctx, `SELECT id, website_id, domain, serial, created_at, updated_at FROM zones WHERE id = ?`, id)
+	if err := row.Scan(&z.ID, &z.WebsiteID, &z.Domain, &z.Serial, &z.CreatedAt, &z.UpdatedAt); err != nil {
+		return nil, fmt.Errorf("get zone: %w", err)
+	}
+	return &z, nil
 }
 
 func (db *DB) GetZoneByWebsite(ctx context.Context, websiteID int64) (*Zone, error) {
@@ -276,25 +306,119 @@ func (db *DB) GetZoneByWebsite(ctx context.Context, websiteID int64) (*Zone, err
 	return &z, nil
 }
 
+func (db *DB) GetZoneByID(ctx context.Context, id int64) (*Zone, error) {
+	var z Zone
+	row := db.QueryRowContext(ctx, `SELECT id, website_id, domain, serial, created_at, updated_at FROM zones WHERE id = ?`, id)
+	if err := row.Scan(&z.ID, &z.WebsiteID, &z.Domain, &z.Serial, &z.CreatedAt, &z.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get zone: %w", err)
+	}
+	return &z, nil
+}
+
+func (db *DB) DeleteAllRecordsForZone(ctx context.Context, zoneID int64) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM dns_records WHERE zone_id = ?`, zoneID)
+	if err != nil {
+		return fmt.Errorf("delete zone records: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) DeleteZone(ctx context.Context, id int64) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM zones WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete zone: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) ListAllZones(ctx context.Context) ([]Zone, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, website_id, domain, serial, created_at, updated_at FROM zones`)
+	if err != nil {
+		return nil, fmt.Errorf("list zones: %w", err)
+	}
+	defer rows.Close()
+	var zones []Zone
+	for rows.Next() {
+		var z Zone
+		if err := rows.Scan(&z.ID, &z.WebsiteID, &z.Domain, &z.Serial, &z.CreatedAt, &z.UpdatedAt); err != nil {
+			continue
+		}
+		zones = append(zones, z)
+	}
+	return zones, nil
+}
+
+func (db *DB) ListAllDomains(ctx context.Context) ([]Domain, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id, website_id, domain, type, ssl_enabled, ssl_expiry, ssl_cert_type, ssl_cert_path, ssl_key_path, created_at FROM domains`)
+	if err != nil {
+		return nil, fmt.Errorf("list domains: %w", err)
+	}
+	defer rows.Close()
+	var domains []Domain
+	for rows.Next() {
+		var d Domain
+		if err := rows.Scan(&d.ID, &d.WebsiteID, &d.Domain, &d.Type, &d.SSLEnabled, &d.SSLExpiry, &d.SSLCertType, &d.SSLCertPath, &d.SSLKeyPath, &d.CreatedAt); err != nil {
+			continue
+		}
+		domains = append(domains, d)
+	}
+	return domains, nil
+}
+
+func (db *DB) GetDomainByID(ctx context.Context, id int64) (*Domain, error) {
+	var d Domain
+	row := db.QueryRowContext(ctx, `SELECT id, website_id, domain, type, ssl_enabled, ssl_expiry, ssl_cert_type, ssl_cert_path, ssl_key_path, created_at FROM domains WHERE id = ?`, id)
+	if err := row.Scan(&d.ID, &d.WebsiteID, &d.Domain, &d.Type, &d.SSLEnabled, &d.SSLExpiry, &d.SSLCertType, &d.SSLCertPath, &d.SSLKeyPath, &d.CreatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get domain: %w", err)
+	}
+	return &d, nil
+}
+
+func (db *DB) GetDomainByName(ctx context.Context, domain string) (*Domain, error) {
+	var d Domain
+	row := db.QueryRowContext(ctx, `SELECT id, website_id, domain, type, ssl_enabled, ssl_expiry, ssl_cert_type, ssl_cert_path, ssl_key_path, created_at FROM domains WHERE domain = ?`, domain)
+	if err := row.Scan(&d.ID, &d.WebsiteID, &d.Domain, &d.Type, &d.SSLEnabled, &d.SSLExpiry, &d.SSLCertType, &d.SSLCertPath, &d.SSLKeyPath, &d.CreatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("get domain: %w", err)
+	}
+	return &d, nil
+}
+
+func (db *DB) DeleteDomain(ctx context.Context, id int64) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM domains WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete domain: %w", err)
+	}
+	return nil
+}
+
 func (db *DB) CreateDNSRecord(ctx context.Context, zoneID int64, recType, name, value string, priority *int) (*DNSRecord, error) {
 	result, err := db.ExecContext(ctx,
-		`INSERT INTO dns_records (zone_id, type, name, value, priority) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO dns_records (zone_id, type, name, value, priority, ttl) VALUES (?, ?, ?, ?, ?, 3600)`,
 		zoneID, recType, name, value, priority)
 	if err != nil {
 		return nil, fmt.Errorf("create dns record: %w", err)
 	}
 	id, _ := result.LastInsertId()
 	var r DNSRecord
-	row := db.QueryRowContext(ctx, `SELECT id, zone_id, type, name, value, priority, created_at, updated_at FROM dns_records WHERE id = ?`, id)
-	if err := row.Scan(&r.ID, &r.ZoneID, &r.Type, &r.Name, &r.Value, &r.Priority, &r.CreatedAt, &r.UpdatedAt); err != nil {
+	row := db.QueryRowContext(ctx, `SELECT id, zone_id, type, name, value, priority, COALESCE(ttl,3600), created_at, updated_at FROM dns_records WHERE id = ?`, id)
+	if err := row.Scan(&r.ID, &r.ZoneID, &r.Type, &r.Name, &r.Value, &r.Priority, &r.TTL, &r.CreatedAt, &r.UpdatedAt); err != nil {
 		return nil, fmt.Errorf("get dns record: %w", err)
 	}
-	return&r, nil
+	return &r, nil
 }
 
 func (db *DB) ListDNSRecordsByZone(ctx context.Context, zoneID int64) ([]DNSRecord, error) {
 	rows, err := db.QueryContext(ctx,
-		`SELECT id, zone_id, type, name, value, priority, created_at, updated_at FROM dns_records WHERE zone_id = ?`, zoneID)
+		`SELECT id, zone_id, type, name, value, priority, COALESCE(ttl,3600), created_at, updated_at FROM dns_records WHERE zone_id = ?`, zoneID)
 	if err != nil {
 		return nil, fmt.Errorf("list dns records: %w", err)
 	}
@@ -303,7 +427,7 @@ func (db *DB) ListDNSRecordsByZone(ctx context.Context, zoneID int64) ([]DNSReco
 	var records []DNSRecord
 	for rows.Next() {
 		var r DNSRecord
-		if err := rows.Scan(&r.ID, &r.ZoneID, &r.Type, &r.Name, &r.Value, &r.Priority, &r.CreatedAt, &r.UpdatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.ZoneID, &r.Type, &r.Name, &r.Value, &r.Priority, &r.TTL, &r.CreatedAt, &r.UpdatedAt); err != nil {
 			continue
 		}
 		records = append(records, r)
@@ -313,8 +437,8 @@ func (db *DB) ListDNSRecordsByZone(ctx context.Context, zoneID int64) ([]DNSReco
 
 func (db *DB) GetDNSRecordByID(ctx context.Context, id int64) (*DNSRecord, error) {
 	var r DNSRecord
-	row := db.QueryRowContext(ctx, `SELECT id, zone_id, type, name, value, priority, created_at, updated_at FROM dns_records WHERE id = ?`, id)
-	if err := row.Scan(&r.ID, &r.ZoneID, &r.Type, &r.Name, &r.Value, &r.Priority, &r.CreatedAt, &r.UpdatedAt); err != nil {
+	row := db.QueryRowContext(ctx, `SELECT id, zone_id, type, name, value, priority, COALESCE(ttl,3600), created_at, updated_at FROM dns_records WHERE id = ?`, id)
+	if err := row.Scan(&r.ID, &r.ZoneID, &r.Type, &r.Name, &r.Value, &r.Priority, &r.TTL, &r.CreatedAt, &r.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("dns record not found")
 		}
@@ -323,7 +447,16 @@ func (db *DB) GetDNSRecordByID(ctx context.Context, id int64) (*DNSRecord, error
 	return &r, nil
 }
 
-func (db *DB) UpdateDNSRecord(ctx context.Context, id int64, name, value string, priority *int) error {
+func (db *DB) UpdateDNSRecord(ctx context.Context, id int64, name, value string, priority *int, ttl *int) error {
+	if ttl != nil && *ttl > 0 {
+		_, err := db.ExecContext(ctx,
+			`UPDATE dns_records SET name = ?, value = ?, priority = ?, ttl = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+			name, value, priority, *ttl, id)
+		if err != nil {
+			return fmt.Errorf("update dns record: %w", err)
+		}
+		return nil
+	}
 	_, err := db.ExecContext(ctx,
 		`UPDATE dns_records SET name = ?, value = ?, priority = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
 		name, value, priority, id)
@@ -337,6 +470,26 @@ func (db *DB) DeleteDNSRecord(ctx context.Context, id int64) error {
 	_, err := db.ExecContext(ctx, `DELETE FROM dns_records WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("delete dns record: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) UpdateZoneSerial(ctx context.Context, id int64, serial int64) error {
+	_, err := db.ExecContext(ctx,
+		`UPDATE zones SET serial = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		serial, id)
+	if err != nil {
+		return fmt.Errorf("update zone serial: %w", err)
+	}
+	return nil
+}
+
+func (db *DB) UpdateDNSRecordTTL(ctx context.Context, id int64, ttl int) error {
+	_, err := db.ExecContext(ctx,
+		`UPDATE dns_records SET ttl = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+		ttl, id)
+	if err != nil {
+		return fmt.Errorf("update dns record ttl: %w", err)
 	}
 	return nil
 }

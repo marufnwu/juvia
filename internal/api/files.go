@@ -1,6 +1,8 @@
 package api
 
 import (
+	"encoding/base64"
+	"io"
 	"net/http"
 	"strconv"
 
@@ -18,6 +20,13 @@ func listFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 		website, err := cfg.DB.GetWebsiteByID(c.Request.Context(), id)
 		if err != nil {
 			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "website not found"))
+			return
+		}
+
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
 			return
 		}
 
@@ -43,12 +52,6 @@ func listFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 	}
 }
 
-type uploadFilesRequest struct {
-	Path     string `json:"path"`
-	FileName string `json:"file_name"`
-	Content  string `json:"content"`
-}
-
 func uploadFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -63,17 +66,42 @@ func uploadFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
-		var req uploadFilesRequest
-		if err := c.ShouldBind(&req); err != nil {
-			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "invalid request: "+err.Error()))
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
 			return
+		}
+
+		if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "failed to parse multipart form: "+err.Error()))
+			return
+		}
+
+		file, header, err := c.Request.FormFile("content")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "content file is required"))
+			return
+		}
+		defer file.Close()
+
+		data, err := io.ReadAll(file)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", "failed to read file content"))
+			return
+		}
+
+		relPath := c.PostForm("path")
+		fileName := header.Filename
+		if overrideName := c.PostForm("file_name"); overrideName != "" {
+			fileName = overrideName
 		}
 
 		resp, err := cfg.AgentClient.Call(c.Request.Context(), "files.upload", map[string]interface{}{
 			"base_path": website.DocumentRoot,
-			"rel_path":  req.Path,
-			"file_name": req.FileName,
-			"content":   req.Content,
+			"rel_path":  relPath,
+			"file_name": fileName,
+			"content":   base64.StdEncoding.EncodeToString(data),
 		})
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to upload file"))
@@ -102,6 +130,13 @@ func downloadFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 		website, err := cfg.DB.GetWebsiteByID(c.Request.Context(), id)
 		if err != nil {
 			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "website not found"))
+			return
+		}
+
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
 			return
 		}
 
@@ -154,6 +189,13 @@ func renameFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
 		var req renameFilesRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "invalid request body"))
@@ -196,6 +238,13 @@ func deleteFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 		website, err := cfg.DB.GetWebsiteByID(c.Request.Context(), id)
 		if err != nil {
 			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "website not found"))
+			return
+		}
+
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
 			return
 		}
 
@@ -243,6 +292,13 @@ func extractFilesHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
 		var req extractFilesRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "invalid request body"))
@@ -280,6 +336,13 @@ func getFileContentHandler(cfg RouterConfig) gin.HandlerFunc {
 		website, err := cfg.DB.GetWebsiteByID(c.Request.Context(), id)
 		if err != nil {
 			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "website not found"))
+			return
+		}
+
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
 			return
 		}
 
@@ -332,6 +395,13 @@ func saveFileContentHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		userID, _ := c.Get("user_id")
+		role, _ := c.Get("role")
+		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
+			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
 		var req saveFileContentRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "invalid request body"))
@@ -356,6 +426,46 @@ func saveFileContentHandler(cfg RouterConfig) gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
 			"data":    gin.H{"message": "file saved"},
+		})
+	}
+}
+
+type createFolderRequest struct {
+	Path string `json:"path" binding:"required"`
+}
+
+func createFolderHandler(cfg RouterConfig) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "invalid website id"))
+			return
+		}
+
+		website, err := cfg.DB.GetWebsiteByID(c.Request.Context(), id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "website not found"))
+			return
+		}
+
+		var req createFolderRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "invalid request body"))
+			return
+		}
+
+		_, err = cfg.AgentClient.Call(c.Request.Context(), "files.mkdir", map[string]interface{}{
+			"base_path": website.DocumentRoot,
+			"rel_path":  req.Path,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to create folder"))
+			return
+		}
+
+		c.JSON(http.StatusCreated, gin.H{
+			"success": true,
+			"data":    gin.H{"message": "folder created"},
 		})
 	}
 }

@@ -1,33 +1,63 @@
 import { create } from 'zustand'
+import { persist } from 'zustand/middleware'
+
+type Theme = 'dark' | 'light'
 
 interface UIState {
   sidebarCollapsed: boolean
-  theme: 'dark' | 'light'
+  theme: Theme
   commandPaletteOpen: boolean
-  toasts: ToastItem[]
   toggleSidebar: () => void
   setSidebarCollapsed: (collapsed: boolean) => void
-  setTheme: (theme: 'dark' | 'light') => void
+  setTheme: (theme: Theme) => void
+  toggleTheme: () => void
   toggleCommandPalette: () => void
   setCommandPaletteOpen: (open: boolean) => void
 }
 
-interface ToastItem {
-  id: string
-  variant: 'success' | 'error' | 'warning' | 'info'
-  title: string
-  message?: string
+function applyThemeClass(theme: Theme) {
+  const root = document.documentElement
+  root.classList.remove('dark', 'light')
+  root.classList.add(theme)
 }
 
-export const useUIStore = create<UIState>((set) => ({
-  sidebarCollapsed: false,
-  theme: 'dark',
-  commandPaletteOpen: false,
-  toasts: [],
+const initialTheme: Theme = 'dark'
 
-  toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
-  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-  setTheme: (theme) => set({ theme }),
-  toggleCommandPalette: () => set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen })),
-  setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
-}))
+export const useUIStore = create<UIState>()(
+  persist(
+    (set, get) => ({
+      sidebarCollapsed: false,
+      theme: initialTheme,
+      commandPaletteOpen: false,
+
+      toggleSidebar: () => set((state) => ({ sidebarCollapsed: !state.sidebarCollapsed })),
+      setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+      setTheme: (theme) => {
+        applyThemeClass(theme)
+        set({ theme })
+      },
+      toggleTheme: () => {
+        const next = get().theme === 'dark' ? 'light' : 'dark'
+        applyThemeClass(next)
+        set({ theme: next })
+      },
+      toggleCommandPalette: () => set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen })),
+      setCommandPaletteOpen: (open) => set({ commandPaletteOpen: open }),
+    }),
+    {
+      name: 'juvia-ui',
+      partialize: (state) => ({ sidebarCollapsed: state.sidebarCollapsed, theme: state.theme }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.theme) {
+          applyThemeClass(state.theme)
+        } else {
+          applyThemeClass(initialTheme)
+        }
+      },
+    }
+  )
+)
+
+if (typeof window !== 'undefined') {
+  applyThemeClass(useUIStore.getState().theme)
+}

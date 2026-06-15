@@ -17,6 +17,7 @@ import (
 	"juvia/internal/agent/firewall"
 	"juvia/internal/agent/git"
 	"juvia/internal/agent/services"
+	"juvia/internal/agent/ssh"
 	"juvia/internal/agent/terminal"
 	"juvia/internal/socket"
 )
@@ -34,21 +35,29 @@ func main() {
 		return map[string]interface{}{"pong": true}, nil
 	})
 	server.RegisterMethod("website.create", agent.HandleWebsiteCreate)
+	server.RegisterMethod("website.update", agent.HandleWebsiteUpdate)
 	server.RegisterMethod("website.delete", agent.HandleWebsiteDelete)
 	server.RegisterMethod("website.suspend", agent.HandleWebsiteSuspend)
 	server.RegisterMethod("ssl.issue", agent.HandleSSLIssue)
 	server.RegisterMethod("ssl.renew", agent.HandleSSLRenew)
 	server.RegisterMethod("ssl.check", agent.HandleSSLCheck)
 	server.RegisterMethod("ssl.remove", agent.HandleSSLRemove)
+	server.RegisterMethod("ssl.issue_domain", agent.HandleSSLIssueDomain)
+	server.RegisterMethod("ssl.renew_domain", agent.HandleSSLRenewDomain)
 	server.RegisterMethod("dns.zone.create", agent.HandleZoneCreate)
 	server.RegisterMethod("dns.zone.update", agent.HandleZoneUpdate)
 	server.RegisterMethod("dns.zone.delete", agent.HandleZoneDelete)
+	server.RegisterMethod("dns.zone.sync_records", agent.HandleZoneSyncRecords)
+	server.RegisterMethod("dns.brand.setup", agent.HandleBrandDNSSetup)
+	server.RegisterMethod("dns.verify", agent.HandleDNSVerify)
+	server.RegisterMethod("dns.verify_nameservers", agent.HandleNameserverHealth)
 	server.RegisterMethod("files.list", agent.HandleFilesList)
 	server.RegisterMethod("files.upload", agent.HandleFilesUpload)
 	server.RegisterMethod("files.download", agent.HandleFilesDownload)
 	server.RegisterMethod("files.delete", agent.HandleFilesDelete)
 	server.RegisterMethod("files.rename", agent.HandleFilesRename)
 	server.RegisterMethod("files.extract", agent.HandleFilesExtract)
+	server.RegisterMethod("files.mkdir", agent.HandleFilesMkdir)
 	server.RegisterMethod("email.create", email.HandleMailboxCreate)
 	server.RegisterMethod("email.delete", email.HandleMailboxDelete)
 	server.RegisterMethod("email.update", email.HandleMailboxUpdate)
@@ -83,7 +92,11 @@ func main() {
 	server.RegisterMethod("webmail.uninstall", email.HandleWebmailUninstall)
 	server.RegisterMethod("webmail.status", email.HandleWebmailStatus)
 	server.RegisterMethod("services.status", services.HandleServicesStatus)
+	server.RegisterMethod("services.check_installed", services.HandleServicesCheckInstalled)
 	server.RegisterMethod("services.restart", services.HandleServicesRestart)
+	server.RegisterMethod("network.get_public_ip", agent.HandleNetworkGetPublicIP)
+	server.RegisterMethod("ssh.configure", ssh.HandleSSHConfigure)
+	server.RegisterMethod("ssh.reload", ssh.HandleSSHReload)
 	server.RegisterMethod("terminal.start", terminal.HandleTerminalStart)
 	server.RegisterMethod("terminal.stop", terminal.HandleTerminalStop)
 

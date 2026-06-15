@@ -69,6 +69,7 @@ func main() {
 
 	router.GET("/ws/v1/metrics", wsServer.HandleMetrics)
 	router.GET("/ws/v1/tasks/:taskId", wsServer.HandleTasks)
+	router.GET("/ws/v1/terminal/:sessionId", wsServer.HandleTerminal)
 
 	ctx := context.Background()
 

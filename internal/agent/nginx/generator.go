@@ -18,6 +18,7 @@ type SiteConfig struct {
 	SSLEnabled   bool
 	SSLCertPath  string
 	SSLKeyPath   string
+	ExtraDomains []string
 }
 
 type PoolConfig struct {
@@ -29,7 +30,7 @@ type PoolConfig struct {
 
 var siteTemplate = `server {
     listen 80;
-    server_name {{.Domain}} www.{{.Domain}};
+    server_name {{.ServerNames}};
     root {{.DocumentRoot}};
     index index.php index.html;
 
@@ -57,13 +58,13 @@ var siteTemplate = `server {
 
 var sslSiteTemplate = `server {
     listen 80;
-    server_name {{.Domain}} www.{{.Domain}};
+    server_name {{.ServerNames}};
     return 301 https://$host$request_uri;
 }
 
 server {
     listen 443 ssl;
-    server_name {{.Domain}} www.{{.Domain}};
+    server_name {{.ServerNames}};
     root {{.DocumentRoot}};
     index index.php index.html;
 
@@ -160,15 +161,50 @@ func generateSiteConfig(cfg SiteConfig) (string, error) {
 	if cfg.SSLEnabled {
 		tmpl = sslSiteTemplate
 	}
+
+	serverNames := buildServerNames(cfg.Domain, cfg.ExtraDomains)
+
+	data := struct {
+		SiteConfig
+		ServerNames string
+	}{
+		SiteConfig:  cfg,
+		ServerNames: serverNames,
+	}
+
 	t, err := template.New("site").Parse(tmpl)
 	if err != nil {
 		return "", err
 	}
 	var buf bytes.Buffer
-	if err := t.Execute(&buf, cfg); err != nil {
+	if err := t.Execute(&buf, data); err != nil {
 		return "", err
 	}
 	return buf.String(), nil
+}
+
+func buildServerNames(primary string, extras []string) string {
+	names := []string{primary}
+	seen := map[string]bool{primary: true}
+
+	if !seen["www."+primary] {
+		names = append(names, "www."+primary)
+		seen["www."+primary] = true
+	}
+
+	for _, d := range extras {
+		if !seen[d] {
+			names = append(names, d)
+			seen[d] = true
+		}
+		www := "www." + d
+		if !seen[www] && !strings.HasPrefix(d, "*.") {
+			names = append(names, www)
+			seen[www] = true
+		}
+	}
+
+	return strings.Join(names, " ")
 }
 
 func writeSiteConfigAtomic(domain, content string) error {

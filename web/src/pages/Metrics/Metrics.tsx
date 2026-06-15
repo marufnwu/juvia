@@ -8,6 +8,7 @@ import { WSClient } from '../../lib/ws'
 import { formatBytes, formatPercentage } from '../../lib/utils'
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { cn } from '../../lib/utils'
+import api from '../../lib/api'
 
 interface MetricsSnapshot {
   cpu: number
@@ -27,12 +28,22 @@ interface DataPoint {
   value: number
 }
 
+interface HistoryPoint {
+  timestamp: string
+  cpu: number
+  ram_used: number
+  ram_total: number
+  network_in: number
+  network_out: number
+}
+
 export default function Metrics() {
   const [metrics, setMetrics] = useState<MetricsSnapshot | null>(null)
   const [cpuHistory, setCpuHistory] = useState<DataPoint[]>([])
   const [ramHistory, setRamHistory] = useState<DataPoint[]>([])
   const [timeRange, setTimeRange] = useState<'1h' | '6h' | '24h' | '7d'>('1h')
   const [loading, setLoading] = useState(true)
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   useEffect(() => {
     const ws = new WSClient(`ws://${window.location.host}/ws/v1/metrics`)
@@ -52,6 +63,33 @@ export default function Metrics() {
     return () => ws.close()
   }, [])
 
+  useEffect(() => {
+    const fetchHistory = async () => {
+      setHistoryLoading(true)
+      try {
+        const res = await api.get(`/metrics/history?range=${timeRange}`)
+        const data = res.data.data as HistoryPoint[]
+        if (data && data.length > 0) {
+          const cpuPoints: DataPoint[] = data.map((p) => ({
+            time: new Date(p.timestamp).toLocaleTimeString(),
+            value: p.cpu,
+          }))
+          const ramPoints: DataPoint[] = data.map((p) => ({
+            time: new Date(p.timestamp).toLocaleTimeString(),
+            value: Math.round((p.ram_used / p.ram_total) * 100),
+          }))
+          setCpuHistory(cpuPoints)
+          setRamHistory(ramPoints)
+        }
+      } catch (err) {
+        console.error('Failed to load metrics history:', err)
+      } finally {
+        setHistoryLoading(false)
+      }
+    }
+    fetchHistory()
+  }, [timeRange])
+
   const cpuPercent = metrics?.cpu ?? 0
   const ramUsed = metrics?.ram_used ?? 0
   const ramTotal = metrics?.ram_total ?? 1
@@ -67,29 +105,21 @@ export default function Metrics() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Server Metrics"
+        title="Server Metrics · How your server is performing"
         description="Real-time server performance monitoring"
         breadcrumbs={[{ label: 'Metrics' }]}
         actions={
           <div className="flex items-center gap-2">
             {['1h', '6h', '24h', '7d'].map((range) => (
-              <button
+              <Button
                 key={range}
-                onClick={() => setTimeRange(range as any)}
-                className={cn(
-                  'px-3 py-1.5 text-xs font-medium rounded transition-colors',
-                  timeRange === range
-                    ? 'bg-primary text-white'
-                    : 'bg-accent text-text-secondary hover:text-foreground'
-                )}
+                variant={timeRange === range ? 'primary' : 'ghost'}
+                size="sm"
+                onClick={() => setTimeRange(range as typeof timeRange)}
               >
                 {range}
-              </button>
+              </Button>
             ))}
-            <Button variant="outline" size="sm" onClick={() => {}}>
-              <RefreshCw className="w-4 h-4 mr-1" />
-              Refresh
-            </Button>
           </div>
         }
       />
@@ -105,7 +135,7 @@ export default function Metrics() {
             </span>
           </div>
           <p className="text-2xl font-semibold">{formatPercentage(cpuPercent)}</p>
-          <p className="text-xs text-text-secondary">CPU Usage</p>
+          <p className="text-xs text-text-secondary">CPU Usage · How busy the processor is</p>
           <div className="mt-2">
             <ProgressBar value={cpuPercent} variant={getVariant(cpuPercent)} showLabel />
           </div>
@@ -118,7 +148,7 @@ export default function Metrics() {
             </div>
           </div>
           <p className="text-2xl font-semibold">{formatBytes(ramUsed)}</p>
-          <p className="text-xs text-text-secondary">of {formatBytes(ramTotal)}</p>
+          <p className="text-xs text-text-secondary">Memory (RAM) · Working space for running programs</p>
           <div className="mt-2">
             <ProgressBar value={(ramUsed / ramTotal) * 100} variant={getVariant((ramUsed / ramTotal) * 100)} showLabel />
           </div>
@@ -131,7 +161,7 @@ export default function Metrics() {
             </div>
           </div>
           <p className="text-2xl font-semibold">{formatBytes(diskUsed)}</p>
-          <p className="text-xs text-text-secondary">of {formatBytes(diskTotal)}</p>
+          <p className="text-xs text-text-secondary">Disk · Permanent storage space</p>
           <div className="mt-2">
             <ProgressBar value={(diskUsed / diskTotal) * 100} variant={getVariant((diskUsed / diskTotal) * 100)} showLabel />
           </div>
@@ -144,10 +174,10 @@ export default function Metrics() {
             </div>
           </div>
           <p className="text-2xl font-semibold">{metrics?.processes ?? '—'}</p>
-          <p className="text-xs text-text-secondary">Processes</p>
+          <p className="text-xs text-text-secondary">Processes · Programs currently running</p>
           {metrics?.load_avg && (
             <p className="text-xs text-text-secondary mt-1">
-              Load: {metrics.load_avg.join(', ')}
+              Load · Server busy-ness (1/5/15 min): {metrics.load_avg.join(', ')}
             </p>
           )}
         </Card>
@@ -156,7 +186,10 @@ export default function Metrics() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card>
           <CardHeader>
-            <CardTitle>CPU Usage Over Time</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              CPU Over Time · Processor usage history
+              {historyLoading && <RefreshCw className="w-3 h-3 animate-spin text-text-secondary" />}
+            </CardTitle>
           </CardHeader>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
@@ -181,7 +214,10 @@ export default function Metrics() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Memory Usage Over Time</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              Memory Over Time · RAM usage history
+              {historyLoading && <RefreshCw className="w-3 h-3 animate-spin text-text-secondary" />}
+            </CardTitle>
           </CardHeader>
           <div className="h-48">
             <ResponsiveContainer width="100%" height="100%">
@@ -207,7 +243,7 @@ export default function Metrics() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Network Traffic</CardTitle>
+          <CardTitle>Network Traffic · Data in and out</CardTitle>
         </CardHeader>
         <div className="grid grid-cols-2 gap-6">
           <div className="flex items-center gap-3">
@@ -215,7 +251,7 @@ export default function Metrics() {
               <Network className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <p className="text-sm text-text-secondary">Inbound</p>
+              <p className="text-sm text-text-secondary">Inbound · Data coming in</p>
               <p className="text-xl font-semibold">{metrics?.network_in ? formatBytes(metrics.network_in) + '/s' : '—'}</p>
             </div>
           </div>
@@ -224,7 +260,7 @@ export default function Metrics() {
               <Network className="w-5 h-5 text-success rotate-180" />
             </div>
             <div>
-              <p className="text-sm text-text-secondary">Outbound</p>
+              <p className="text-sm text-text-secondary">Outbound · Data going out</p>
               <p className="text-xl font-semibold">{metrics?.network_out ? formatBytes(metrics.network_out) + '/s' : '—'}</p>
             </div>
           </div>

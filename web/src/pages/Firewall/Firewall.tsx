@@ -1,16 +1,17 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Shield, Plus, RefreshCw, Trash2, CheckCircle, XCircle, Globe, Lock, Server } from 'lucide-react'
+import { Shield, Plus, RefreshCw, Trash2, CheckCircle, XCircle, Globe, Lock, Server, Pencil } from 'lucide-react'
 import { Card, CardHeader, CardTitle, CardDescription } from '../../components/ui/Card'
 import { Button } from '../../components/ui/Button'
 import { Badge, StatusBadge } from '../../components/ui/Badge'
 import { Table } from '../../components/ui/Table'
 import { PageHeader } from '../../components/ui/Misc'
-import { Modal } from '../../components/ui/Modal'
-import { Input, Label, Select, FormGroup } from '../../components/ui/Input'
+import { Modal, ConfirmModal } from '../../components/ui/Modal'
+import { Input, Label, Select, FormGroup, Switch } from '../../components/ui/Input'
 import api from '../../lib/api'
 import { formatDate } from '../../lib/utils'
 import { cn } from '../../lib/utils'
+import { useApiError } from '../../hooks/useToast'
 
 interface FirewallRule {
   id: number
@@ -24,6 +25,7 @@ interface FirewallRule {
 }
 
 export default function Firewall() {
+  const showError = useApiError()
   const [rules, setRules] = useState<FirewallRule[]>([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
@@ -31,6 +33,11 @@ export default function Firewall() {
     name: '', action: 'allow', protocol: 'tcp', port: '', source: '0.0.0.0/0',
   })
   const [saving, setSaving] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [editingRule, setEditingRule] = useState<FirewallRule | null>(null)
+  const [editFormData, setEditFormData] = useState({ name: '', action: 'allow' as 'allow' | 'deny', protocol: 'tcp' as 'tcp' | 'udp' | 'all', port: '', source: '' })
+  const [confirmDelete, setConfirmDelete] = useState<number | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     loadRules()
@@ -56,7 +63,7 @@ export default function Firewall() {
       setFormData({ name: '', action: 'allow', protocol: 'tcp', port: '', source: '0.0.0.0/0' })
       loadRules()
     } catch (err: any) {
-      alert(err.response?.data?.error?.user_message || 'Failed to create rule')
+      showError(err, 'Failed to create rule')
     } finally {
       setSaving(false)
     }
@@ -67,17 +74,53 @@ export default function Firewall() {
       await api.put(`/firewall/rules/${id}`, { enabled: !enabled })
       loadRules()
     } catch (err: any) {
-      alert(err.response?.data?.error?.user_message || 'Failed to update rule')
+      showError(err, 'Failed to update rule')
     }
   }
 
-  const handleDelete = async (id: number) => {
-    if (!confirm('Delete this rule?')) return
+  const handleDelete = (id: number) => {
+    setConfirmDelete(id)
+  }
+
+  const doDelete = async () => {
+    if (!confirmDelete) return
+    const id = confirmDelete
+    setConfirmDelete(null)
+    setDeleting(true)
     try {
       await api.delete(`/firewall/rules/${id}`)
       setRules(rules.filter((r) => r.id !== id))
     } catch (err: any) {
-      alert(err.response?.data?.error?.user_message || 'Failed to delete')
+      showError(err, 'Failed to delete')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  const openEditModal = (rule: FirewallRule) => {
+    setEditingRule(rule)
+    setEditFormData({
+      name: rule.name,
+      action: rule.action,
+      protocol: rule.protocol,
+      port: rule.port,
+      source: rule.source,
+    })
+    setShowEditModal(true)
+  }
+
+  const handleEdit = async () => {
+    if (!editingRule || !editFormData.name || !editFormData.port) return
+    setSaving(true)
+    try {
+      await api.put(`/firewall/rules/${editingRule.id}`, editFormData)
+      setShowEditModal(false)
+      setEditingRule(null)
+      loadRules()
+    } catch (err: any) {
+      showError(err, 'Failed to update rule')
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -115,18 +158,10 @@ export default function Firewall() {
       key: 'enabled',
       header: 'Status',
       render: (rule: FirewallRule) => (
-        <button
-          onClick={() => handleToggle(rule.id, rule.enabled)}
-          className={cn(
-            'relative w-10 h-5 rounded-full transition-colors',
-            rule.enabled ? 'bg-success' : 'bg-border'
-          )}
-        >
-          <span className={cn(
-            'absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform',
-            rule.enabled ? 'left-5.5' : 'left-0.5'
-          )} />
-        </button>
+        <Switch
+          checked={rule.enabled}
+          onChange={() => handleToggle(rule.id, rule.enabled)}
+        />
       ),
     },
     {
@@ -139,14 +174,26 @@ export default function Firewall() {
     {
       key: 'actions',
       header: '',
-      width: '80px',
+      width: '120px',
       render: (rule: FirewallRule) => (
-        <button
-          onClick={() => handleDelete(rule.id)}
-          className="p-1.5 text-text-secondary hover:text-danger hover:bg-danger/10 rounded transition-colors"
-        >
-          <Trash2 className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => openEditModal(rule)}
+            title="Edit"
+          >
+            <Pencil className="w-3.5 h-3.5" />
+          </Button>
+          <Button
+            variant="danger"
+            size="icon"
+            onClick={() => handleDelete(rule.id)}
+            title="Delete"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+          </Button>
+        </div>
       ),
     },
   ]
@@ -182,20 +229,24 @@ export default function Firewall() {
           data={rules}
           keyField="id"
           loading={loading}
-          emptyMessage="No firewall rules configured"
+          emptyMessage={
+            <div className="p-8 text-center">
+              <Shield className="w-12 h-12 mx-auto text-text-secondary/50 mb-3" />
+              <p className="text-sm text-text-secondary mb-3">No custom firewall rules</p>
+              <Button variant="primary" size="sm" onClick={() => setShowModal(true)}>Add your first rule</Button>
+            </div>
+          }
         />
       </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <Card className="text-center">
           <Globe className="w-8 h-8 mx-auto text-success mb-2" />
-          <p className="font-medium">HTTP/HTTPS</p>
-          <p className="text-xs text-text-secondary mt-1">Ports 80, 443</p>
+          <p className="font-medium">HTTP/HTTPS · Web traffic ports (80, 443)</p>
         </Card>
         <Card className="text-center">
           <Server className="w-8 h-8 mx-auto text-primary mb-2" />
-          <p className="font-medium">SSH</p>
-          <p className="text-xs text-text-secondary mt-1">Port 22 (rate limited)</p>
+          <p className="font-medium">SSH · Secure remote login (port 22)</p>
         </Card>
         <Card className="text-center">
           <Lock className="w-8 h-8 mx-auto text-warning mb-2" />
@@ -235,8 +286,8 @@ export default function Firewall() {
               value={formData.protocol}
               onChange={(e) => setFormData({ ...formData, protocol: e.target.value })}
             >
-              <option value="tcp">TCP</option>
-              <option value="udp">UDP</option>
+              <option value="tcp">TCP · Reliable (web, email)</option>
+              <option value="udp">UDP · Fast (DNS, streaming)</option>
               <option value="all">All</option>
             </Select>
           </FormGroup>
@@ -262,6 +313,75 @@ export default function Firewall() {
           </div>
         </div>
       </Modal>
+
+      <Modal open={showEditModal} onClose={() => setShowEditModal(false)} title="Edit Firewall Rule" size="sm">
+        <div className="space-y-4">
+          {editingRule && (
+            <>
+              <FormGroup>
+                <Label>Rule Name</Label>
+                <Input
+                  value={editFormData.name}
+                  onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                  placeholder="SSH Access"
+                />
+              </FormGroup>
+              <FormGroup>
+                <Label>Action</Label>
+                <Select
+                  value={editFormData.action}
+                  onChange={(e) => setEditFormData({ ...editFormData, action: e.target.value as 'allow' | 'deny' })}
+                >
+                  <option value="allow">Allow</option>
+                  <option value="deny">Deny</option>
+                </Select>
+              </FormGroup>
+              <FormGroup>
+            <Label>Protocol · Type of traffic</Label>
+                <Select
+                  value={editFormData.protocol}
+                  onChange={(e) => setEditFormData({ ...editFormData, protocol: e.target.value as 'tcp' | 'udp' | 'all' })}
+                >
+                  <option value="tcp">TCP</option>
+                  <option value="udp">UDP</option>
+                  <option value="all">All</option>
+                </Select>
+              </FormGroup>
+              <FormGroup>
+            <Label>Port · Traffic channel number</Label>
+                <Input
+                  value={editFormData.port}
+                  onChange={(e) => setEditFormData({ ...editFormData, port: e.target.value })}
+                  placeholder="22 or 8000-9000"
+                />
+              </FormGroup>
+              <FormGroup>
+            <Label>Source IP · Which addresses this rule applies to</Label>
+                <Input
+                  value={editFormData.source}
+                  onChange={(e) => setEditFormData({ ...editFormData, source: e.target.value })}
+                  placeholder="0.0.0.0/0 or 192.168.1.0/24"
+                />
+              </FormGroup>
+              <div className="flex justify-end gap-3 pt-2">
+                <Button variant="outline" onClick={() => setShowEditModal(false)}>Cancel</Button>
+                <Button onClick={handleEdit} loading={saving}>Save Changes</Button>
+              </div>
+            </>
+          )}
+        </div>
+      </Modal>
+
+      <ConfirmModal
+        open={!!confirmDelete}
+        onClose={() => setConfirmDelete(null)}
+        onConfirm={doDelete}
+        title="Delete Firewall Rule"
+        description="Remove this firewall rule? The change takes effect immediately."
+        confirmLabel="Delete"
+        variant="danger"
+        loading={deleting}
+      />
     </div>
   )
 }

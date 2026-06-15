@@ -12,25 +12,117 @@ type Service struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Status      string `json:"status"`
+	Installed   bool   `json:"installed"`
+	ErrorDetail string `json:"error_detail,omitempty"`
+	FixHint     string `json:"fix_hint,omitempty"`
+}
+
+type serviceInfo struct {
+	Description string
+	Command     string
+	FixInstall  string
+	FixStart    string
+	FixConfig   string
+}
+
+var serviceRegistry = map[string]serviceInfo{
+	"nginx": {
+		Description: "Web server · Serves your websites to visitors",
+		Command:     "nginx",
+		FixInstall:  "sudo apt install -y nginx",
+		FixStart:    "sudo systemctl start nginx",
+		FixConfig:   "sudo nginx -t",
+	},
+	"php-fpm": {
+		Description: "PHP processor · Runs your website's PHP code",
+		Command:     "php-fpm",
+		FixInstall:  "sudo apt install -y php-fpm",
+		FixStart:    "sudo systemctl start php*-fpm",
+		FixConfig:   "",
+	},
+	"mysql": {
+		Description: "Database server · Stores website data",
+		Command:     "mysqld",
+		FixInstall:  "sudo apt install -y mysql-server",
+		FixStart:    "sudo systemctl start mysql",
+		FixConfig:   "",
+	},
+	"postfix": {
+		Description: "Outgoing mail · Sends email from your server",
+		Command:     "postfix",
+		FixInstall:  "sudo apt install -y postfix",
+		FixStart:    "sudo systemctl start postfix",
+		FixConfig:   "",
+	},
+	"dovecot": {
+		Description: "Mail storage · Handles incoming email & IMAP",
+		Command:     "dovecot",
+		FixInstall:  "sudo apt install -y dovecot-imapd",
+		FixStart:    "sudo systemctl start dovecot",
+		FixConfig:   "",
+	},
+	"named": {
+		Description: "DNS server · Makes your server authoritative for your domains",
+		Command:     "named",
+		FixInstall:  "sudo apt install -y bind9 bind9utils",
+		FixStart:    "sudo systemctl start bind9",
+		FixConfig:   "sudo named-checkconf",
+	},
+	"ufw": {
+		Description: "Firewall · Controls which ports are open",
+		Command:     "ufw",
+		FixInstall:  "sudo apt install -y ufw",
+		FixStart:    "sudo ufw enable",
+		FixConfig:   "",
+	},
+	"certbot": {
+		Description: "SSL certificates · Encrypts your websites with HTTPS",
+		Command:     "certbot",
+		FixInstall:  "sudo snap install certbot --classic",
+		FixStart:    "",
+		FixConfig:   "",
+	},
+	"rspamd": {
+		Description: "Spam filter · Protects against email spam",
+		Command:     "rspamd",
+		FixInstall:  "sudo apt install -y rspamd",
+		FixStart:    "sudo systemctl start rspamd",
+		FixConfig:   "",
+	},
 }
 
 func listServicesHandler(cfg RouterConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		services := []Service{
-			{Name: "nginx", Description: "Web server", Status: "unknown"},
-			{Name: "php-fpm", Description: "PHP FastCGI Process Manager", Status: "unknown"},
-			{Name: "mysql", Description: "MySQL database server", Status: "unknown"},
-			{Name: "postfix", Description: "Mail transfer agent", Status: "unknown"},
-			{Name: "dovecot", Description: "IMAP/POP3 mail server", Status: "unknown"},
-			{Name: "named", Description: "BIND DNS server", Status: "unknown"},
-			{Name: "ufw", Description: "Uncomplicated Firewall", Status: "unknown"},
-		}
+		var services []Service
 
-		for i := range services {
-			status, err := getServiceStatus(cfg.AgentClient, services[i].Name)
-			if err == nil {
-				services[i].Status = status
+		for name, info := range serviceRegistry {
+			svc := Service{
+				Name:        name,
+				Description: info.Description,
+				Status:      "unknown",
+				Installed:   false,
 			}
+
+			status, err := getServiceStatus(cfg.AgentClient, name)
+			if err == nil {
+				svc.Status = status
+			}
+
+			installed, _ := checkServiceInstalled(cfg.AgentClient, name, info.Command)
+			svc.Installed = installed
+
+			if !installed {
+				svc.ErrorDetail = info.Command + " is not installed"
+				svc.FixHint = info.FixInstall
+			} else if status == "inactive" {
+				svc.ErrorDetail = info.Command + " is installed but not running"
+				svc.FixHint = info.FixStart
+			} else if status == "failed" {
+				svc.ErrorDetail = info.Command + " has crashed or has a config error"
+				svc.FixHint = info.FixConfig
+			}
+
+			services = append(services, svc)
 		}
 
 		c.JSON(http.StatusOK, gin.H{
@@ -44,31 +136,36 @@ func getServiceHandler(cfg RouterConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		serviceName := c.Param("name")
 
-		validServices := map[string]string{
-			"nginx":   "Web server",
-			"php-fpm": "PHP FastCGI Process Manager",
-			"mysql":    "MySQL database server",
-			"postfix":  "Mail transfer agent",
-			"dovecot":  "IMAP/POP3 mail server",
-			"named":    "BIND DNS server",
-			"ufw":      "Uncomplicated Firewall",
-		}
-
-		description, ok := validServices[serviceName]
+		info, ok := serviceRegistry[serviceName]
 		if !ok {
 			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "service not found"))
 			return
 		}
 
 		status, _ := getServiceStatus(cfg.AgentClient, serviceName)
+		installed, _ := checkServiceInstalled(cfg.AgentClient, serviceName, info.Command)
+
+		svc := Service{
+			Name:        serviceName,
+			Description: info.Description,
+			Status:      status,
+			Installed:   installed,
+		}
+
+		if !installed {
+			svc.ErrorDetail = info.Command + " is not installed"
+			svc.FixHint = info.FixInstall
+		} else if status == "inactive" {
+			svc.ErrorDetail = info.Command + " is installed but not running"
+			svc.FixHint = info.FixStart
+		} else if status == "failed" {
+			svc.ErrorDetail = info.Command + " has crashed or has a config error"
+			svc.FixHint = info.FixConfig
+		}
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
-			"data": Service{
-				Name:        serviceName,
-				Description: description,
-				Status:      status,
-			},
+			"data":    svc,
 		})
 	}
 }
@@ -77,12 +174,7 @@ func restartServiceHandler(cfg RouterConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		serviceName := c.Param("name")
 
-		validServices := map[string]bool{
-			"nginx": true, "php-fpm": true, "mysql": true,
-			"postfix": true, "dovecot": true, "named": true,
-		}
-
-		if !validServices[serviceName] {
+		if _, ok := serviceRegistry[serviceName]; !ok {
 			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "service not found"))
 			return
 		}
@@ -119,4 +211,20 @@ func getServiceStatus(agentClient *socket.Client, serviceName string) (string, e
 		}
 	}
 	return "unknown", nil
+}
+
+func checkServiceInstalled(agentClient *socket.Client, serviceName string, command string) (bool, error) {
+	resp, err := agentClient.Call(context.Background(), "services.check_installed", map[string]interface{}{
+		"service": serviceName,
+		"command": command,
+	})
+	if err != nil || resp.Error != nil {
+		return false, err
+	}
+	if result, ok := resp.Result.(map[string]interface{}); ok {
+		if installed, ok := result["installed"].(bool); ok {
+			return installed, nil
+		}
+	}
+	return false, nil
 }
