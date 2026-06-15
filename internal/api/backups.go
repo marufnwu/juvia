@@ -263,6 +263,24 @@ func createBackupScheduleHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "backup.schedule.create", map[string]interface{}{
+			"schedule_id":    schedule.ID,
+			"website_id":    req.WebsiteID,
+			"schedule":      req.Schedule,
+			"storage":       storage,
+			"retention_days": retentionDays,
+		})
+		if err != nil {
+			cfg.DB.DeleteBackupSchedule(c.Request.Context(), schedule.ID)
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to create backup schedule: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			cfg.DB.DeleteBackupSchedule(c.Request.Context(), schedule.ID)
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
+			return
+		}
+
 		c.JSON(http.StatusCreated, gin.H{
 			"success": true,
 			"data":    schedule,
@@ -275,6 +293,18 @@ func deleteBackupScheduleHandler(cfg RouterConfig) gin.HandlerFunc {
 		id, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "invalid schedule id"))
+			return
+		}
+
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "backup.schedule.delete", map[string]interface{}{
+			"schedule_id": id,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to delete backup schedule from server: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
 			return
 		}
 

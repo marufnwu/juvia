@@ -94,8 +94,124 @@ func HandleMailboxUpdate(ctx context.Context, params json.RawMessage) (interface
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, fmt.Errorf("invalid params: %w", err)
 	}
+	if req.Email == "" {
+		return nil, fmt.Errorf("email is required")
+	}
+
+	user := strings.Split(req.Email, "@")[0]
+	domain := strings.Split(req.Email, "@")[1]
+	userDBPath := filepath.Join(mailBaseDir, domain, "userdb")
+
+	data, err := os.ReadFile(userDBPath)
+	if err != nil {
+		return nil, fmt.Errorf("read userdb: %w", err)
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var newLines []string
+	for _, line := range lines {
+		if strings.HasPrefix(line, user+":") {
+			parts := strings.Split(line, ":")
+			if len(parts) >= 8 {
+				if req.Quota > 0 {
+					parts[2] = fmt.Sprintf("%d", req.Quota)
+				}
+				newLines = append(newLines, strings.Join(parts, ":"))
+			} else {
+				newLines = append(newLines, line)
+			}
+		} else {
+			newLines = append(newLines, line)
+		}
+	}
+
+	if err := os.WriteFile(userDBPath, []byte(strings.Join(newLines, "\n")), 0600); err != nil {
+		return nil, fmt.Errorf("write userdb: %w", err)
+	}
+
+	if req.ForwardTo != "" {
+		virtualAliasPath := "/etc/postfix/virtual_aliases"
+		os.MkdirAll(filepath.Dir(virtualAliasPath), 0700)
+
+		fwdLine := fmt.Sprintf("%s@%s %s", user, domain, req.ForwardTo)
+		removeLineFromFileContains(virtualAliasPath, user+"@"+domain)
+		f, err := os.OpenFile(virtualAliasPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+		if err == nil {
+			f.WriteString(fwdLine + "\n")
+			f.Close()
+		}
+		reloadPostfix()
+	}
+
+	reloadDovecot()
 
 	return map[string]interface{}{"updated": true}, nil
+}
+
+func HandleCatchAllSet(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req struct {
+		Domain    string `json:"domain"`
+		ForwardTo string `json:"forward_to"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid params: %w", err)
+	}
+	if req.Domain == "" || req.ForwardTo == "" {
+		return nil, fmt.Errorf("domain and forward_to are required")
+	}
+
+	catchAllPath := "/etc/postfix/catchall"
+	os.MkdirAll(filepath.Dir(catchAllPath), 0700)
+
+	catchAllMapPath := catchAllPath + "/catchall_map"
+	removeLineFromFileContains(catchAllMapPath, req.Domain)
+
+	f, err := os.OpenFile(catchAllMapPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600)
+	if err != nil {
+		return nil, fmt.Errorf("write catchall map: %w", err)
+	}
+	f.WriteString("@" + req.Domain + " " + req.ForwardTo + "\n")
+	f.Close()
+
+	exec.Command("postmap", catchAllMapPath).Run()
+	reloadPostfix()
+
+	return map[string]interface{}{"domain": req.Domain, "forward_to": req.ForwardTo}, nil
+}
+
+func HandleCatchAllDelete(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req struct {
+		Domain string `json:"domain"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid params: %w", err)
+	}
+	if req.Domain == "" {
+		return nil, fmt.Errorf("domain is required")
+	}
+
+	catchAllMapPath := "/etc/postfix/catchall/catchall_map"
+	removeLineFromFileContains(catchAllMapPath, req.Domain)
+
+	exec.Command("postmap", catchAllMapPath).Run()
+	reloadPostfix()
+
+	return map[string]interface{}{"deleted": true}, nil
+}
+
+func removeLineFromFileContains(path, pattern string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+	lines := strings.Split(string(data), "\n")
+	var newLines []string
+	for _, l := range lines {
+		if !strings.Contains(l, pattern) && l != "" {
+			newLines = append(newLines, l)
+		}
+	}
+	return os.WriteFile(path, []byte(strings.Join(newLines, "\n")), 0600)
 }
 
 func HandleAliasCreate(ctx context.Context, params json.RawMessage) (interface{}, error) {

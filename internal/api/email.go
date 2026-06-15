@@ -181,6 +181,21 @@ func updateMailboxHandler(cfg RouterConfig) gin.HandlerFunc {
 			quota = mailbox.Quota
 		}
 
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "email.update", map[string]interface{}{
+			"email":       mailbox.Email,
+			"display_name": displayName,
+			"quota":       quota,
+			"forward_to":   forwardTo,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to update mailbox: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
+			return
+		}
+
 		if err := cfg.DB.UpdateMailbox(c.Request.Context(), id, displayName, forwardTo, quota); err != nil {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 			return
@@ -423,6 +438,19 @@ func setCatchAllHandler(cfg RouterConfig) gin.HandlerFunc {
 		var req catchAllRequest
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "invalid request body"))
+			return
+		}
+
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "email.catchall.set", map[string]interface{}{
+			"domain":     req.Domain,
+			"forward_to": req.ForwardTo,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to set catch-all: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
 			return
 		}
 

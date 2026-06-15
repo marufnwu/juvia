@@ -257,6 +257,73 @@ func HandleBackupDelete(ctx context.Context, params json.RawMessage) (interface{
 	return map[string]interface{}{"deleted": true}, nil
 }
 
+func HandleBackupScheduleCreate(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req struct {
+		ScheduleID  int64  `json:"schedule_id"`
+		WebsiteID  *int64 `json:"website_id"`
+		Schedule   string `json:"schedule"`
+		Storage    string `json:"storage"`
+		RetentionDays int `json:"retention_days"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid params: %w", err)
+	}
+
+	cronDir := "/etc/cron.d"
+	os.MkdirAll(cronDir, 0755)
+
+	backupCmd := fmt.Sprintf("/usr/local/bin/juvia-backup --schedule-id=%d", req.ScheduleID)
+	cronLine := fmt.Sprintf("%s root %s # juvia:backup:%d\n", req.Schedule, backupCmd, req.ScheduleID)
+	cronFile := filepath.Join(cronDir, "juvia-backup")
+
+	f, err := os.OpenFile(cronFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return nil, fmt.Errorf("open cron file: %w", err)
+	}
+	f.WriteString(cronLine)
+	f.Close()
+
+	exec.Command("systemctl", "reload", "cron").Run()
+	exec.Command("systemctl", "reload", "crond").Run()
+
+	return map[string]interface{}{
+		"schedule_id": req.ScheduleID,
+		"schedule":   req.Schedule,
+	}, nil
+}
+
+func HandleBackupScheduleDelete(ctx context.Context, params json.RawMessage) (interface{}, error) {
+	var req struct {
+		ScheduleID int64 `json:"schedule_id"`
+	}
+	if err := json.Unmarshal(params, &req); err != nil {
+		return nil, fmt.Errorf("invalid params: %w", err)
+	}
+
+	cronFile := "/etc/cron.d/juvia-backup"
+	data, err := os.ReadFile(cronFile)
+	if err != nil {
+		return nil, nil
+	}
+
+	lines := strings.Split(string(data), "\n")
+	var newLines []string
+	for _, line := range lines {
+		if !strings.Contains(line, fmt.Sprintf("juvia:backup:%d", req.ScheduleID)) {
+			newLines = append(newLines, line)
+		}
+	}
+
+	if err := os.WriteFile(cronFile, []byte(strings.Join(newLines, "\n")), 0644); err != nil {
+		return nil, fmt.Errorf("write cron file: %w", err)
+	}
+
+	exec.Command("systemctl", "reload", "cron").Run()
+	exec.Command("systemctl", "reload", "crond").Run()
+
+	return map[string]interface{}{"deleted": true}, nil
+}
+
 type website struct {
 	ID           int64
 	Name         string

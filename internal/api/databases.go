@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"juvia/internal/auth"
+	"juvia/internal/db"
 )
 
 var dbNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_]{1,64}$`)
@@ -270,7 +271,7 @@ func createDBUserHandler(cfg RouterConfig) gin.HandlerFunc {
 
 func deleteDBUserHandler(cfg RouterConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		_, err := strconv.ParseInt(c.Param("id"), 10, 64)
+		databaseID, err := strconv.ParseInt(c.Param("id"), 10, 64)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, fail("VALIDATION_ERROR", "invalid database id"))
 			return
@@ -282,9 +283,44 @@ func deleteDBUserHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
-		cfg.AgentClient.Call(c.Request.Context(), "database.user.delete", map[string]interface{}{
-			"id": userID,
+		database, err := cfg.DB.GetDatabaseByID(c.Request.Context(), databaseID)
+		if err != nil {
+			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "database not found"))
+			return
+		}
+
+		users, err := cfg.DB.ListDBUsers(c.Request.Context(), databaseID)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
+			return
+		}
+
+		var userToDelete *db.DBUser
+		for _, u := range users {
+			if u.ID == userID {
+				userToDelete = &u
+				break
+			}
+		}
+		if userToDelete == nil {
+			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "user not found"))
+			return
+		}
+
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "database.user.delete", map[string]interface{}{
+			"name":     database.Name,
+			"engine":  database.Engine,
+			"username": userToDelete.Username,
+			"host":    userToDelete.Host,
 		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to delete database user: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
+			return
+		}
 
 		if err := cfg.DB.DeleteDBUser(c.Request.Context(), userID); err != nil {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))

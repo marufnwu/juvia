@@ -193,6 +193,21 @@ func updateCronJobHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "cron.update", map[string]interface{}{
+			"id":       id,
+			"schedule": schedule,
+			"command":  command,
+			"run_as":   runAs,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to update cron job: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
+			return
+		}
+
 		if err := cfg.DB.UpdateCronJob(c.Request.Context(), id, schedule, command, runAs); err != nil {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 			return
@@ -219,14 +234,24 @@ func deleteCronJobHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
-		cfg.AgentClient.Call(c.Request.Context(), "cron.delete", map[string]interface{}{
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "cron.delete", map[string]interface{}{
 			"id": id,
 		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to delete cron job from server: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
+			return
+		}
 
 		if err := cfg.DB.DeleteCronJob(c.Request.Context(), id); err != nil {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 			return
 		}
+
+		cfg.DB.LogAudit(c.Request.Context(), &job.UserID, "Deleted cron job "+job.Command, c.ClientIP(), c.Request.UserAgent(), "")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -243,10 +268,30 @@ func enableCronJobHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		job, err := cfg.DB.GetCronJobByID(c.Request.Context(), id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "cron job not found"))
+			return
+		}
+
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "cron.enable", map[string]interface{}{
+			"id": id,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to enable cron job: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
+			return
+		}
+
 		if err := cfg.DB.EnableCronJob(c.Request.Context(), id); err != nil {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 			return
 		}
+
+		cfg.DB.LogAudit(c.Request.Context(), &job.UserID, "Enabled cron job "+job.Command, c.ClientIP(), c.Request.UserAgent(), "")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,
@@ -263,10 +308,30 @@ func disableCronJobHandler(cfg RouterConfig) gin.HandlerFunc {
 			return
 		}
 
+		job, err := cfg.DB.GetCronJobByID(c.Request.Context(), id)
+		if err != nil {
+			c.JSON(http.StatusNotFound, fail("NOT_FOUND", "cron job not found"))
+			return
+		}
+
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "cron.disable", map[string]interface{}{
+			"id": id,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to disable cron job: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
+			return
+		}
+
 		if err := cfg.DB.DisableCronJob(c.Request.Context(), id); err != nil {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 			return
 		}
+
+		cfg.DB.LogAudit(c.Request.Context(), &job.UserID, "Disabled cron job "+job.Command, c.ClientIP(), c.Request.UserAgent(), "")
 
 		c.JSON(http.StatusOK, gin.H{
 			"success": true,

@@ -335,6 +335,29 @@ func updateWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 			webServer = website.WebServer
 		}
 
+		domains, _ := cfg.DB.ListDomainsByWebsite(c.Request.Context(), id)
+		var extraDomains []string
+		for _, d := range domains {
+			if d.Type != "primary" {
+				extraDomains = append(extraDomains, d.Domain)
+			}
+		}
+
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "website.update", map[string]interface{}{
+			"domain":        website.Domain,
+			"php_version":  phpVersion,
+			"web_server":   webServer,
+			"extra_domains": extraDomains,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to update website: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
+			return
+		}
+
 		if err := cfg.DB.UpdateWebsite(c.Request.Context(), id, phpVersion, webServer); err != nil {
 			c.JSON(http.StatusInternalServerError, fail("SERVER_ERROR", err.Error()))
 			return
@@ -368,6 +391,19 @@ func deleteWebsiteHandler(cfg RouterConfig) gin.HandlerFunc {
 		role, _ := c.Get("role")
 		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
 			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "website.suspend", map[string]interface{}{
+			"domain":        website.Domain,
+			"document_root": website.DocumentRoot,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to suspend website: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
 			return
 		}
 
@@ -611,6 +647,29 @@ func changePHPHandler(cfg RouterConfig) gin.HandlerFunc {
 		role, _ := c.Get("role")
 		if role != "admin" && (website.UserID == nil || *website.UserID != userID.(int64)) {
 			c.JSON(http.StatusForbidden, fail("FORBIDDEN", "You do not have access to this website"))
+			return
+		}
+
+		domains, _ := cfg.DB.ListDomainsByWebsite(c.Request.Context(), id)
+		var extraDomains []string
+		for _, d := range domains {
+			if d.Type != "primary" {
+				extraDomains = append(extraDomains, d.Domain)
+			}
+		}
+
+		resp, err := cfg.AgentClient.Call(c.Request.Context(), "website.update", map[string]interface{}{
+			"domain":        website.Domain,
+			"php_version":  req.PHPVersion,
+			"web_server":   website.WebServer,
+			"extra_domains": extraDomains,
+		})
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", "failed to change PHP version: "+err.Error()))
+			return
+		}
+		if resp.Error != nil {
+			c.JSON(http.StatusInternalServerError, fail("AGENT_ERROR", resp.Error.Message))
 			return
 		}
 
